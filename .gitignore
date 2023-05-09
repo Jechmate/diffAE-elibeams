@@ -3,3 +3,4 @@ Electron_Spectra_ALFA
 .DS_Store
 __pycache__
 .vscode
+*.png
