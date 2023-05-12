@@ -1,11 +1,15 @@
 # In this file the dataset of 2D spectra will be created for use in diffAE
+# Code calibrated for folder n1, for others changes might be necessary
 
 import cv2
 import math
+import os
+import glob
+import numpy as np
+from tqdm import tqdm
 
 
 # ----------------- Constants and array initialization ----------------------
-pixel_in_mm = 0.137
 hor_min = 1162
 hor_max = 1463
 ver_min = 764
@@ -38,9 +42,17 @@ def read_img(path):
     return I
 
 
+def get_list_of_tiff(folder_path):
+    files = []
+    for dirpath, _, _ in os.walk(folder_path):
+        tiff_files = glob.glob(os.path.join(dirpath, "*.tiff"))
+        files += tiff_files
+    return sorted(files)
+
+
 def preprocess_image(img):
     I_filtered = cv2.medianBlur(img, 5) # TODO personally I think 5 is better, original has 3
-    I_norm = cv2.normalize(I_filtered.astype('float'), None, 0.0, 1.0, cv2.NORM_MINMAX) # TODO This is wrong as each image can have different min and max
+    I_norm = I_filtered / math.pow(2, 16) # Max value found across all images was 65520. 65535 is max for a 16 bit number. I assume this is the true maximum
     I_crop = I_norm[ver_min:ver_max, hor_min:hor_max]
     I_wo_black_dots = I_crop.copy()
     height, width = I_wo_black_dots.shape
@@ -59,10 +71,25 @@ def preprocess_image(img):
 
 
 def main():
-    img = read_img('data/1/Electron_Spectr__21782323__20220222_175902816_1.tiff')
+    filenames = get_list_of_tiff('data')
+    file = filenames[0]
+    print(file)
+    img = read_img(file)
     processed = preprocess_image(img)
-    cv2.imwrite("processed.png", cv2.normalize(processed, None, 0, 255, cv2.NORM_MINMAX))
-
+    cv2.imwrite("processed.png", (processed * 255).astype(int))# cv2.normalize(processed, None, 0, 255, cv2.NORM_MINMAX))
+    # max_value = np.iinfo(np.uint8).min
+    # for path in tqdm(filenames):
+    #     image = read_img(path)
+# 
+    #     # Find the max pixel value in the image
+    #     image_max = np.max(image)
+# 
+    #     # Update the overall max pixel value if necessary
+    #     if image_max > max_value:
+    #         max_value = image_max
+# 
+    # # Print the maximum pixel value across all images
+    # print("Max pixel value:", max_value)
 
 if __name__ == "__main__":
     main()
