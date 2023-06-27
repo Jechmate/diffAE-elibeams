@@ -4,3 +4,6 @@ Electron_Spectra_ALFA
 __pycache__
 .vscode
 *.png
+mag_out
+archived
+~*
