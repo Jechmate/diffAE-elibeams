@@ -7,6 +7,7 @@ import os
 import glob
 import numpy as np
 from tqdm import tqdm
+from pathlib import Path
 
 
 # ----------------- Constants and array initialization ----------------------
@@ -55,53 +56,32 @@ def get_list_of_tiff(folder_path):
 def preprocess_image(img): # TODO automatically erase black dots
     I_filtered = cv2.medianBlur(img, 5) # TODO personally I think 5 is better, original has 3
     I_norm = I_filtered / 16 / 4095 # http://softwareservices.flir.com/BFS-PGE-31S4/latest/Model/public/ImageFormatControl.html
-    I_crop = I_norm[ver_min:ver_max, hor_min:hor_max]
-    I_wo_black_dots = I_crop.copy()
-    height, width = I_wo_black_dots.shape
-    for dot in black_dots: # interpolating values around the black dot. Only considers the x axis (y is commented out in original_script)
-        center_hor = dot[0][1]
-        center_ver = dot[0][0]
-        radius = dot[1]
-        for l in range(width):
-            for m in range(height):
-                if center_hor - radius < l < center_hor + radius and center_ver - radius <  m < center_ver + radius \
-                    and math.sqrt((m - center_ver)**2 + (l - center_hor)**2) < radius:
-                    aux_x_min = center_hor - round(math.sqrt(radius**2 - (m - center_ver)**2))
-                    aux_x_max = center_hor + round(math.sqrt(radius**2 - (m - center_ver)**2))
-                    I_wo_black_dots[m,l] = ((aux_x_max - l) / (aux_x_max - aux_x_min)) * I_crop[m,aux_x_min] + ((l - aux_x_min) / (aux_x_max - aux_x_min)) * I_crop[m,aux_x_max]
-    return I_wo_black_dots
+    # Remove scratches
+    I_norm[780:840, 500:550] = 0
+    I_norm[1255:1262, 1101:1111] = 0
+    return I_norm
 
 
-def find_dots(img):
-    # Detects circles in an image. Returns the image with drawn circles and a list of circles (x, y, radius)
-    img[780:840, 500:550] = 0
-    img[1255:1262, 1101:1111] = 0
-    img = cv2.medianBlur(img, 5)
-    img = img / 16 / 4095
-    img = img * 255
-    img = img.astype(np.uint8)
-    binary = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 4)
-    circles = cv2.HoughCircles(binary, cv2.HOUGH_GRADIENT, 1, minDist=20, param1=50, param2=7, minRadius=0, maxRadius=10)
-    if circles is not None:
-        circles = np.round(circles[0, :]).astype(int)
-        image_copy = binary.copy()
-        image_copy = cv2.cvtColor(image_copy, cv2.COLOR_GRAY2RGB)
-        for circle in circles:
-            x, y, radius = circle
-            cv2.circle(image_copy, (x, y), radius, (0, 255, 0), 2)
-            print("Circle center: ({}, {})".format(x, y))
-    else:
-        return None, None
-    return image_copy, circles
+def find_dots(images):
+    circles = []
+    for img in images:
+        img = img * 255
+        img = img.astype(np.uint8)
+        binary = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 4)
+        circles_in_img = cv2.HoughCircles(binary, cv2.HOUGH_GRADIENT, 1, minDist=20, param1=50, param2=7, minRadius=0, maxRadius=10)
+        if circles_in_img is not None:
+            circles_in_img = np.round(circles_in_img[0, :]).astype(int)
+            circles.extend(circles_in_img)
+    return circles
 
 
-def remove_dots(img):
+def remove_dots_old(img, black_dots):
     I_wo_black_dots = img.copy()
     height, width = I_wo_black_dots.shape
     for dot in black_dots: # interpolating values around the black dot. Only considers the x axis (y is commented out in original_script)
-        center_hor = dot[0][1]
-        center_ver = dot[0][0]
-        radius = dot[1]
+        center_hor = dot[0]
+        center_ver = dot[1]
+        radius = dot[2]
         for l in range(width):
             for m in range(height):
                 if center_hor - radius < l < center_hor + radius and center_ver - radius <  m < center_ver + radius \
@@ -110,6 +90,32 @@ def remove_dots(img):
                     aux_x_max = center_hor + round(math.sqrt(radius**2 - (m - center_ver)**2))
                     I_wo_black_dots[m,l] = ((aux_x_max - l) / (aux_x_max - aux_x_min)) * img[m,aux_x_min] + ((l - aux_x_min) / (aux_x_max - aux_x_min)) * img[m,aux_x_max]
     return I_wo_black_dots
+
+
+def remove_dots(img, black_dots):
+    I_wo_black_dots = img.copy()
+    height, width = I_wo_black_dots.shape
+    for dot in black_dots:
+        center_hor = dot[0]
+        center_ver = dot[1]
+        radius = dot[2] + 4
+        x_min = max(center_hor - radius, 0)
+        x_max = min(center_hor + radius + 1, width)
+        y_min = max(center_ver - radius, 0)
+        y_max = min(center_ver + radius + 1, height)
+        x_range = np.arange(x_min, x_max)
+        y_range = np.arange(y_min, y_max)
+        xx, yy = np.meshgrid(x_range, y_range)
+        dist = np.sqrt((xx - center_hor) ** 2 + (yy - center_ver) ** 2)
+        mask = dist < radius
+        aux_x_min = np.round(center_hor - np.sqrt(radius ** 2 - (yy[mask] - center_ver) ** 2)).astype(int)
+        aux_x_max = np.round(center_hor + np.sqrt(radius ** 2 - (yy[mask] - center_ver) ** 2)).astype(int)
+        aux_x_min[aux_x_min < 0] = 0
+        aux_x_max[aux_x_max >= width] = width - 1
+        aux_y = yy[mask]
+        I_wo_black_dots[aux_y, xx[mask]] = ((aux_x_max - xx[mask]) / (aux_x_max - aux_x_min)) * img[aux_y, aux_x_min] + ((xx[mask] - aux_x_min) / (aux_x_max - aux_x_min)) * img[aux_y, aux_x_max]
+    return I_wo_black_dots
+
 
 
 def find_laser(images):
@@ -122,14 +128,51 @@ def find_laser(images):
     return max_x, max_y
 
 
-def prepare_data(mag_out_folder='mag_out', experiment_folder='data', parameters=None):
+def crop_by_laser(image, laser_pos):
+    return image[laser_pos[1] - 60:laser_pos[1] + 60, laser_pos[0] - 50:laser_pos[0] + 250]
+
+
+def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'), output_folder=Path('processed'), parameters=None):
     # Parameters will be a path to csv when I create it
     experiments = os.listdir(experiment_folder)
-    setup = os.listdir(mag_out_folder)
+    for experiment in tqdm(experiments):
+        print("Experiment: ", experiment)
+        experiment = Path(experiment)
+        if str(experiment) == '17' or str(experiment) == '18':
+            ex_name = Path('17_18')
+        elif str(experiment) == '14' or str(experiment) == '15':
+            ex_name == '12'
+        else:
+            ex_name = experiment.name
+        calibration_folder = mag_out_folder / ex_name
+
+        # Image preparation
+        images = [read_img(a) for a in get_list_of_tiff(experiment_folder/experiment)]
+        images = [preprocess_image(a) for a in images]
+        image_dots = find_dots(images)
+        images = [remove_dots(a, image_dots) for a in images]
+
+        # Calibration image preparation
+        calib = [read_img(a) for a in get_list_of_tiff(calibration_folder)]
+        calib = [preprocess_image(a) for a in calib]
+        calib_dots = find_dots(calib)
+        calib = [remove_dots(a, calib_dots) for a in calib]
+        
+        # Crop by laser pos
+        laser_pos = find_laser(calib)
+        print(laser_pos)
+        images = [crop_by_laser(a, laser_pos) for a in images]
+        # Save results
+        os.mkdir(output_folder/experiment)
+        for i, im in enumerate(images):
+            im = (im*255).astype(np.uint16)
+            cv2.imwrite(str(output_folder/experiment/Path(str(i) + '.png')), im)
+
 
 def main():
-    x, y = find_laser('mag_out/1')
-    print(x, y)
+    # x, y = find_laser('mag_out/1')
+    # print(x, y)
+    prepare_data()
     # filenames = get_list_of_tiff('data')
     # print("Num of files:", len(filenames))
     # max = 0
