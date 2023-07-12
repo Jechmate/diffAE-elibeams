@@ -10,17 +10,6 @@ from tqdm import tqdm
 from pathlib import Path
 
 
-# ----------------- Constants and array initialization ----------------------
-width = 300
-height = 120
-hor_min = 1162
-hor_max = 1463
-ver_min = 764
-ver_max = 885
-# Black dots calibrated up to [:3] (first 4) for folder 1
-black_dots = [((56, 46), 10), ((57, 114), 12), ((56, 187), 12), ((53, 261), 12)] # every dot: ((center_y, center_x), radius)
-
-
 # Matlab-like round
 def round_half_up(n, decimals=0):
     multiplier = 10 ** decimals
@@ -53,8 +42,8 @@ def get_list_of_tiff(folder_path):
     return sorted(files)
 
 
-def preprocess_image(img): # TODO automatically erase black dots
-    I_filtered = cv2.medianBlur(img, 5) # TODO personally I think 5 is better, original has 3
+def preprocess_image(img):
+    I_filtered = cv2.medianBlur(img, 5)
     I_norm = I_filtered / 16 / 4095 # http://softwareservices.flir.com/BFS-PGE-31S4/latest/Model/public/ImageFormatControl.html
     # Remove scratches
     I_norm[780:840, 500:550] = 0
@@ -129,15 +118,14 @@ def find_laser(images):
 
 
 def crop_by_laser(image, laser_pos):
-    return image[laser_pos[1] - 60:laser_pos[1] + 60, laser_pos[0] - 50:laser_pos[0] + 250]
+    return image[laser_pos[1] - 80:laser_pos[1] + 80, laser_pos[0] - 50:laser_pos[0] + 250]
 
 
 def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'), output_folder=Path('processed'), parameters=None):
     # Parameters will be a path to csv when I create it
     experiments = os.listdir(experiment_folder)
     for experiment in tqdm(experiments):
-        print("Experiment: ", experiment)
-        experiment = Path(experiment)
+        experiment = Path(experiment) # TODO change February 18th no_mag for the no_mag_no_slit ones
         if str(experiment) == '17' or str(experiment) == '18':
             ex_name = Path('17_18')
         elif str(experiment) == '14' or str(experiment) == '15':
@@ -160,7 +148,6 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
         
         # Crop by laser pos
         laser_pos = find_laser(calib)
-        print(laser_pos)
         images = [crop_by_laser(a, laser_pos) for a in images]
         # Save results
         os.mkdir(output_folder/experiment)
@@ -170,25 +157,7 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
 
 
 def main():
-    # x, y = find_laser('mag_out/1')
-    # print(x, y)
     prepare_data()
-    # filenames = get_list_of_tiff('data')
-    # print("Num of files:", len(filenames))
-    # max = 0
-    # for file in tqdm(filenames):
-    #     img = read_img(file)
-    #     img_max = np.max(img)
-    #     if img_max > max:
-    #         max = img_max
-    # print("Max across all images:", max)
-    # file = filenames[0]
-    # print(file)
-    # img = read_img(file)
-    # unique, counts = np.unique(img, return_counts=True)
-    # print(unique)
-    # processed = preprocess_image(img)
-    # cv2.imwrite("processed.png", (processed * 255).astype(int))
 
 if __name__ == "__main__":
     main()
