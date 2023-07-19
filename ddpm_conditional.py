@@ -42,7 +42,7 @@ class Diffusion:
         logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
-            x = torch.randn((n, 3, self.img_size, self.img_size)).to(self.device)
+            x = torch.randn((n, 1, self.img_size, self.img_size)).to(self.device)
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = model(x, t, labels)
@@ -97,7 +97,7 @@ def train(args):
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
-        if epoch % 10 == 0:
+        if epoch % 50 == 0:
             labels = torch.arange(10).long().to(device)
             sampled_images = diffusion.sample(model, n=len(labels), labels=labels)
             ema_sampled_images = diffusion.sample(ema_model, n=len(labels), labels=labels)
@@ -114,11 +114,11 @@ def launch():
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
     args.run_name = "DDPM_conditional"
-    args.epochs = 300
+    args.epochs = 301
     args.batch_size = 14
     args.image_size = 64
-    args.num_classes = 10
-    args.dataset_path = r"C:\Users\dome\datasets\cifar10\cifar10-64\train"
+    args.num_classes = 22
+    args.dataset_path = r"train"
     args.device = "cuda"
     args.lr = 3e-4
     train(args)

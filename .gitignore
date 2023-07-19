@@ -9,3 +9,6 @@ archived
 ~*
 *.tiff
 processed
+models
+results
+runs

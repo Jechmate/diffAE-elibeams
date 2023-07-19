@@ -40,7 +40,7 @@ class Diffusion:
         logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
-            x = torch.randn((n, 3, self.img_size, self.img_size)).to(self.device)
+            x = torch.randn((n, 1, self.img_size, self.img_size)).to(self.device)
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = model(x, t)
@@ -85,21 +85,22 @@ def train(args):
 
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
-
-        sampled_images = diffusion.sample(model, n=images.shape[0])
-        save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
-        torch.save(model.state_dict(), os.path.join("models", args.run_name, f"ckpt.pt"))
+        
+        if epoch % 10 == 0:
+            sampled_images = diffusion.sample(model, n=images.shape[0])
+            save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
+            torch.save(model.state_dict(), os.path.join("models", args.run_name, f"ckpt.pt"))
 
 
 def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "DDPM_Uncondtional"
-    args.epochs = 500
+    args.run_name = "DDPM_Unconditional_wide"
+    args.epochs = 501
     args.batch_size = 12
     args.image_size = 64
-    args.dataset_path = r"C:\Users\dome\datasets\landscape_img_folder"
+    args.dataset_path = r"train"
     args.device = "cuda"
     args.lr = 3e-4
     train(args)
