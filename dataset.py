@@ -118,7 +118,7 @@ def find_laser(images):
 
 
 def crop_by_laser(image, laser_pos):
-    return image[laser_pos[1] - 80:laser_pos[1] + 80, laser_pos[0] - 50:laser_pos[0] + 250]
+    return image[laser_pos[1] - 60:laser_pos[1] + 60, laser_pos[0] - 50:laser_pos[0] + 250]
 
 
 def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'), output_folder=Path('processed'), parameters=None):
@@ -152,7 +152,7 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
         # Save results
         os.mkdir(output_folder/experiment)
         for i, im in enumerate(images):
-            im = (im*255).astype(np.uint16)
+            im = (im*255).astype(np.int8)
             cv2.imwrite(str(output_folder/experiment/Path(str(i) + '.png')), im)
 
 
