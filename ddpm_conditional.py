@@ -9,12 +9,13 @@ from utils import *
 from modules import UNet_conditional, EMA
 import logging
 from torch.utils.tensorboard import SummaryWriter
+from torchsummary import summary
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
 
 class Diffusion:
-    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=256, device="cuda"):
+    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_height=120, img_width=300, device="cuda"):
         self.noise_steps = noise_steps
         self.beta_start = beta_start
         self.beta_end = beta_end
@@ -23,7 +24,8 @@ class Diffusion:
         self.alpha = 1. - self.beta
         self.alpha_hat = torch.cumprod(self.alpha, dim=0)
 
-        self.img_size = img_size
+        self.img_height = img_height
+        self.img_width = img_width
         self.device = device
 
     def prepare_noise_schedule(self):
@@ -42,7 +44,7 @@ class Diffusion:
         logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
-            x = torch.randn((n, 1, self.img_size, self.img_size)).to(self.device)
+            x = torch.randn((n, 1, self.img_height, self.img_width)).to(self.device)
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = model(x, t, labels)
@@ -67,10 +69,10 @@ def train(args):
     setup_logging(args.run_name)
     device = args.device
     dataloader = get_data(args)
-    model = UNet_conditional(num_classes=args.num_classes).to(device)
+    model = UNet_conditional(num_classes=args.num_classes, img_height=args.image_height, img_width=args.image_width).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     mse = nn.MSELoss()
-    diffusion = Diffusion(img_size=args.image_size, device=device)
+    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
     ema = EMA(0.995)
@@ -84,6 +86,8 @@ def train(args):
             labels = labels.to(device)
             t = diffusion.sample_timesteps(images.shape[0]).to(device)
             x_t, noise = diffusion.noise_images(images, t)
+            if epoch == 0 and i == 0:
+                summary(model, x_t, t, labels)
             if np.random.random() < 0.1:
                 labels = None
             predicted_noise = model(x_t, t, labels)
@@ -99,12 +103,12 @@ def train(args):
 
         if epoch % 50 == 0:
             labels = torch.arange(10).long().to(device)
-            sampled_images = diffusion.sample(model, n=len(labels), labels=labels)
+            # sampled_images = diffusion.sample(model, n=len(labels), labels=labels)
             ema_sampled_images = diffusion.sample(ema_model, n=len(labels), labels=labels)
-            plot_images(sampled_images)
-            save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
+            # plot_images(sampled_images)
+            # save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
             save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
-            torch.save(model.state_dict(), os.path.join("models", args.run_name, f"ckpt.pt"))
+            # torch.save(model.state_dict(), os.path.join("models", args.run_name, f"ckpt.pt"))
             torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
             torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
 
@@ -114,9 +118,10 @@ def launch():
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
     args.run_name = "DDPM_conditional"
-    args.epochs = 301
-    args.batch_size = 14
-    args.image_size = 64
+    args.epochs = 501
+    args.batch_size = 8
+    args.image_height = 64
+    args.image_width = 128
     args.num_classes = 22
     args.dataset_path = r"train"
     args.device = "cuda"
