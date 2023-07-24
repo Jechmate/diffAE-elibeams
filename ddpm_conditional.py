@@ -29,25 +29,26 @@ class Diffusion:
         self.device = device
 
     def prepare_noise_schedule(self):
-        return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
+        t = torch.linspace(0, 1, self.noise_steps)
+        return self.beta_end + 0.5 * (self.beta_start - self.beta_end) * (1 + torch.cos(t * torch.pi))
 
     def noise_images(self, x, t):
         sqrt_alpha_hat = torch.sqrt(self.alpha_hat[t])[:, None, None, None]
         sqrt_one_minus_alpha_hat = torch.sqrt(1 - self.alpha_hat[t])[:, None, None, None]
-        Ɛ = torch.randn_like(x)
-        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * Ɛ, Ɛ
+        eps = torch.randn_like(x)
+        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * eps, eps
 
     def sample_timesteps(self, n):
         return torch.randint(low=1, high=self.noise_steps, size=(n,))
 
-    def sample(self, model, n, labels, cfg_scale=3):
+    def sample(self, model, n, settings, cfg_scale=3):
         logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
             x = torch.randn((n, 1, self.img_height, self.img_width)).to(self.device)
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
-                predicted_noise = model(x, t, labels)
+                predicted_noise = model(x, t, settings)
                 if cfg_scale > 0:
                     uncond_predicted_noise = model(x, t, None)
                     predicted_noise = torch.lerp(uncond_predicted_noise, predicted_noise, cfg_scale)
@@ -69,10 +70,10 @@ def train(args):
     setup_logging(args.run_name)
     device = args.device
     dataloader = get_data(args)
-    model = UNet_conditional(num_classes=args.num_classes, img_height=args.image_height, img_width=args.image_width).to(device)
+    model = UNet_conditional(img_height=args.image_height, img_width=args.image_width).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     mse = nn.MSELoss()
-    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device)
+    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=350)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
     ema = EMA(0.995)
@@ -81,16 +82,16 @@ def train(args):
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
         pbar = tqdm(dataloader)
-        for i, (images, labels) in enumerate(pbar):
-            images = images.to(device)
-            labels = labels.to(device)
+        for i, data in enumerate(pbar):
+            images = data['image'].to(device)
+            settings = data['settings'].to(device)
             t = diffusion.sample_timesteps(images.shape[0]).to(device)
             x_t, noise = diffusion.noise_images(images, t)
             if epoch == 0 and i == 0:
-                summary(model, x_t, t, labels)
+                summary(model, x_t, t, settings)
             if np.random.random() < 0.1:
-                labels = None
-            predicted_noise = model(x_t, t, labels)
+                settings = None
+            predicted_noise = model(x_t, t, settings)
             loss = mse(noise, predicted_noise)
 
             optimizer.zero_grad()
@@ -101,10 +102,10 @@ def train(args):
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
-        if epoch % 50 == 0:
-            labels = torch.arange(10).long().to(device)
-            # sampled_images = diffusion.sample(model, n=len(labels), labels=labels)
-            ema_sampled_images = diffusion.sample(ema_model, n=len(labels), labels=labels)
+        if epoch % 50 == 0: # and epoch > 0:
+            settings = torch.Tensor([20.,100.,10.5,50.,40.]).to(device)
+            # sampled_images = diffusion.sample(model, n=len(settings), settings=settings)
+            ema_sampled_images = diffusion.sample(ema_model, n=10, settings=settings)
             # plot_images(sampled_images)
             # save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
             save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
@@ -117,13 +118,13 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "DDPM_conditional"
-    args.epochs = 501
+    args.run_name = "CFG_cosine_350steps_settDense"
+    args.epochs = 101
     args.batch_size = 8
     args.image_height = 64
     args.image_width = 128
-    args.num_classes = 22
     args.dataset_path = r"train"
+    args.csv_path = "params.csv"
     args.device = "cuda"
     args.lr = 3e-4
     train(args)
@@ -131,13 +132,3 @@ def launch():
 
 if __name__ == '__main__':
     launch()
-    # device = "cuda"
-    # model = UNet_conditional(num_classes=10).to(device)
-    # ckpt = torch.load("./models/DDPM_conditional/ckpt.pt")
-    # model.load_state_dict(ckpt)
-    # diffusion = Diffusion(img_size=64, device=device)
-    # n = 8
-    # y = torch.Tensor([6] * n).long().to(device)
-    # x = diffusion.sample(model, n, y, cfg_scale=0)
-    # plot_images(x)
-

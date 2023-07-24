@@ -12,3 +12,5 @@ processed
 models
 results
 runs
+*.jpg
+*.jpeg
