@@ -1,7 +1,7 @@
-# In this file the dataset of 2D spectra will be created for use in diffAE
-# Code calibrated for folder n1, for others changes might be necessary
+# TODO Experiment 14 image 17 (and others) - weird black marks on high energy areas
+# remove gain from images via :  gain(dB) = 20 * log10 (GainRaw / 32), db to linear: gain(lin) = 10^(gain(dB)/10) src: https://docs.baslerweb.com/gain, https://www.quora.com/What-is-the-formula-for-converting-decibels-to-linear-units
+# Camera used: Basler aca2040-25gm
 
-import cv2
 import math
 import os
 import glob
@@ -49,6 +49,13 @@ def preprocess_image(img):
     I_norm[780:840, 500:550] = 0
     I_norm[1255:1262, 1101:1111] = 0
     return I_norm
+
+
+def remove_gain(img, gain_raw):
+    gain_dB = 20 * np.log10(gain_raw / 32)
+    gain_lin = np.power(10, gain_dB/10)
+    img_nogain = img / gain_lin
+    return img_nogain
 
 
 def find_dots(images):

@@ -84,6 +84,7 @@ class Down(nn.Module):
             nn.MaxPool2d(2),
             DoubleConv(in_channels, in_channels, residual=True),
             DoubleConv(in_channels, out_channels),
+            # nn.Dropout(p=0.2),
         )
 
         self.emb_layer = nn.Sequential(
@@ -92,6 +93,7 @@ class Down(nn.Module):
                 emb_dim,
                 out_channels
             ),
+            # nn.Dropout(p=0.2),
         )
 
     def forward(self, x, t):
@@ -108,6 +110,7 @@ class Up(nn.Module):
         self.conv = nn.Sequential(
             DoubleConv(in_channels, in_channels, residual=True),
             DoubleConv(in_channels, out_channels, in_channels // 2),
+            # nn.Dropout(p=0.2),
         )
 
         self.emb_layer = nn.Sequential(
@@ -116,6 +119,7 @@ class Up(nn.Module):
                 emb_dim,
                 out_channels
             ),
+            # nn.Dropout(p=0.2),
         )
 
     def forward(self, x, skip_x, t):
@@ -127,7 +131,7 @@ class Up(nn.Module):
 
 
 class UNet_conditional(nn.Module): # TODO try adding dropout
-    def __init__(self, c_in=1, c_out=1, time_dim=256, device="cuda", img_width=256, img_height=128):
+    def __init__(self, c_in=1, c_out=1, time_dim=256, device="cuda", img_width=256, img_height=128, feat_num=5):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
@@ -151,7 +155,11 @@ class UNet_conditional(nn.Module): # TODO try adding dropout
         self.sa6 = SelfAttention(64, img_height, img_width)
         self.outc = nn.Conv2d(64, c_out, kernel_size=1)
 
-        self.label_emb = nn.Linear(5, time_dim)
+        self.label_prep = nn.Sequential(
+            nn.BatchNorm1d(feat_num),
+            nn.Linear(feat_num, time_dim),
+            nn.SiLU(),
+        )
 
     def pos_encoding(self, t, channels):
         inv_freq = 1.0 / (
@@ -168,8 +176,8 @@ class UNet_conditional(nn.Module): # TODO try adding dropout
         t = self.pos_encoding(t, self.time_dim)
 
         if y is not None:
-            p = self.label_emb(y).squeeze()
-            t += p
+            y = self.label_prep(y).squeeze()
+            t += y
 
         x1 = self.inc(x)
         x2 = self.down1(x1, t)

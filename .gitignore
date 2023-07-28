@@ -14,3 +14,5 @@ results
 runs
 *.jpg
 *.jpeg
+torch_utils
+dnnlib

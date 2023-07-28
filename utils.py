@@ -3,6 +3,7 @@ import torch
 import torchvision
 from PIL import Image
 from matplotlib import pyplot as plt
+import matplotlib as mpl
 from torch.utils.data import DataLoader, Dataset
 import pandas as pd
 import numpy as np
@@ -12,7 +13,7 @@ import glob
 class ExperimentDataset(Dataset):
     """Face settings dataset."""
 
-    def __init__(self, csv_file="params.csv", root_dir="train", transform=None):
+    def __init__(self, csv_file="params.csv", root_dir="train", transform=None, features=["E","perc_N","P","gain","ms"]):
         """
         Arguments:
             csv_file (string): Path to the csv file with settings.
@@ -20,7 +21,8 @@ class ExperimentDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.settings = pd.read_csv(csv_file, engine='python')
+        self.features = features
+        self.settings = pd.read_csv(csv_file, engine='python')[features]
         self.root_dir = root_dir
         self.file_list = self.get_list_of_img()
         self.transform = transform
@@ -41,13 +43,13 @@ class ExperimentDataset(Dataset):
         filename = self.file_list[idx]
         image = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
         exp_index = int(filename.split('/')[1])
-        settings = self.settings.iloc[exp_index-1, 1:]
+        settings = self.settings.iloc[exp_index-1, 0:]
         settings = np.array([settings])
-        settings = settings.astype('float32').reshape(-1, 5)
+        settings = settings.astype('float32').reshape(-1, len(self.features))
         if self.transform:
             image = self.transform(image)
         to_tens = torchvision.transforms.ToTensor()
-        settings = to_tens(settings)
+        settings = to_tens(settings).squeeze()
         sample = {'image': image, 'settings': settings}
 
         return sample
@@ -73,7 +75,7 @@ def plot_images_from_dir(path, num_images):
 
     for i in range(n):
         plt.subplot(rows, cols, i + 1)
-        plt.imshow(images[i])
+        plt.imshow(images[i], vmin=0, vmax=255, cmap=mpl.colormaps['viridis'])
         plt.axis("off")
         plt.title(f"{i}", size=12)
 
@@ -82,15 +84,15 @@ def plot_images_from_dir(path, num_images):
 
 def plot_images(images):
     n = len(images)
-    rows = (n + 4) // 5
-    cols = min(n, 5)
+    rows = 2
+    cols = 4
 
-    plt.figure(figsize=(32, 32))
+    plt.figure(figsize=(64, 32))
     plt.subplots_adjust(wspace=0.1, hspace=0.1)
 
     for i in range(n):
         plt.subplot(rows, cols, i + 1)
-        plt.imshow(images[i].cpu().permute(1, 2, 0).numpy())
+        plt.imshow(images[i].cpu().permute(1, 2, 0).numpy(), vmin=0, vmax=255, cmap=mpl.colormaps['viridis'])
         plt.axis("off")
         plt.title(f"{i}", size=12)
 
@@ -115,10 +117,8 @@ def get_data(args):
         # torchvision.transforms.Grayscale(), # TODO hope this doesnt do any funny business with the data
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Resize((args.image_height, args.image_width)),  # args.image_size + 1/4 *args.image_size
-        # torchvision.transforms.RandomResizedCrop((args.image_height, args.image_width), scale=(0.8, 1.0)),
-        torchvision.transforms.Normalize(0.5, 0.5)
     ])
-    dataset = ExperimentDataset(args.csv_path, args.dataset_path, transform=transforms)
+    dataset = ExperimentDataset(args.csv_path, args.dataset_path, transform=transforms, features=args.features)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     return dataloader
 

@@ -9,6 +9,7 @@ from utils import *
 from modules import UNet_conditional, EMA
 import logging
 from torch.utils.tensorboard import SummaryWriter
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torchsummary import summary
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
@@ -70,10 +71,12 @@ def train(args):
     setup_logging(args.run_name)
     device = args.device
     dataloader = get_data(args)
-    model = UNet_conditional(img_height=args.image_height, img_width=args.image_width).to(device)
+    steps_per_epoch = len(dataloader)
+    model = UNet_conditional(img_height=args.image_height, img_width=args.image_width, feat_num=len(args.features)).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
     mse = nn.MSELoss()
-    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=350)
+    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
     ema = EMA(0.995)
@@ -98,14 +101,15 @@ def train(args):
             loss.backward()
             optimizer.step()
             ema.step_ema(ema_model, model)
+            scheduler.step()
 
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
-        if epoch % 50 == 0: # and epoch > 0:
-            settings = torch.Tensor([20.,100.,10.5,50.,40.]).to(device)
-            # sampled_images = diffusion.sample(model, n=len(settings), settings=settings)
-            ema_sampled_images = diffusion.sample(ema_model, n=10, settings=settings)
+        if epoch % 10 == 0:# and epoch > 0:
+            settings = torch.Tensor([13.,15.,20.]).to(device).unsqueeze(0)
+            # sampled_images = diffusion.sample(model, n=args.batch_size, settings=settings)
+            ema_sampled_images = diffusion.sample(ema_model, n=args.batch_size, settings=settings)
             # plot_images(sampled_images)
             # save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
             save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
@@ -118,15 +122,17 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "CFG_cosine_350steps_settDense"
+    args.run_name = "CFG_700_nonorm"
     args.epochs = 101
+    args.noise_steps = 700
     args.batch_size = 8
     args.image_height = 64
     args.image_width = 128
+    args.features = ["E","P","ms"]
     args.dataset_path = r"train"
     args.csv_path = "params.csv"
     args.device = "cuda"
-    args.lr = 3e-4
+    args.lr = 1e-3
     train(args)
 
 
