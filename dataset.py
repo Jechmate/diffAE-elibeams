@@ -8,6 +8,12 @@ import glob
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
+import cv2
+
+
+def add_fingerprint(image, size=5):
+    image[0:size, 0:size] = 255
+    return image
 
 
 # Matlab-like round
@@ -34,10 +40,10 @@ def read_img(path):
     return I
 
 
-def get_list_of_tiff(folder_path):
+def get_list_of_imgs(folder_path, type_regex="*.tiff"):
     files = []
     for dirpath, _, _ in os.walk(folder_path):
-        tiff_files = glob.glob(os.path.join(dirpath, "*.tiff"))
+        tiff_files = glob.glob(os.path.join(dirpath, type_regex))
         files += tiff_files
     return sorted(files)
 
@@ -142,13 +148,13 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
         calibration_folder = mag_out_folder / ex_name
 
         # Image preparation
-        images = [read_img(a) for a in get_list_of_tiff(experiment_folder/experiment)]
+        images = [read_img(a) for a in get_list_of_imgs(experiment_folder/experiment)]
         images = [preprocess_image(a) for a in images]
         image_dots = find_dots(images)
         images = [remove_dots(a, image_dots) for a in images]
 
         # Calibration image preparation
-        calib = [read_img(a) for a in get_list_of_tiff(calibration_folder)]
+        calib = [read_img(a) for a in get_list_of_imgs(calibration_folder)]
         calib = [preprocess_image(a) for a in calib]
         calib_dots = find_dots(calib)
         calib = [remove_dots(a, calib_dots) for a in calib]

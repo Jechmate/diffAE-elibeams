@@ -122,10 +122,10 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "CFG_700_nonorm"
-    args.epochs = 101
+    args.run_name = "CFG_700_norm_fing"
+    args.epochs = 301
     args.noise_steps = 700
-    args.batch_size = 8
+    args.batch_size = 4
     args.image_height = 64
     args.image_width = 128
     args.features = ["E","P","ms"]
