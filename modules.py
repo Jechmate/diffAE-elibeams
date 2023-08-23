@@ -156,7 +156,7 @@ class UNet_conditional(nn.Module): # TODO try adding dropout
         self.outc = nn.Conv2d(64, c_out, kernel_size=1)
 
         self.label_prep = nn.Sequential(
-            nn.BatchNorm1d(feat_num),
+            nn.BatchNorm1d(feat_num), # TODO this might be a bad idea if the batchsize is small (which it is)
             nn.Linear(feat_num, time_dim),
             nn.SiLU(),
         )

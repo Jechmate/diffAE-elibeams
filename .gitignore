@@ -16,3 +16,5 @@ runs
 *.jpeg
 torch_utils
 dnnlib
+*.onnx
+*.txt

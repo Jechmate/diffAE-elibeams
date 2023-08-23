@@ -13,7 +13,7 @@ import glob
 class ExperimentDataset(Dataset):
     """Face settings dataset."""
 
-    def __init__(self, csv_file="params.csv", root_dir="train", transform=None, features=["E","perc_N","P","gain","ms"]):
+    def __init__(self, csv_file="params.csv", root_dir="train", transform=None, features=["E","perc_N","P","gain","ms"], exclude=[]):
         """
         Arguments:
             csv_file (string): Path to the csv file with settings.
@@ -24,12 +24,16 @@ class ExperimentDataset(Dataset):
         self.features = features
         self.settings = pd.read_csv(csv_file, engine='python')[features]
         self.root_dir = root_dir
+        self.exclude = exclude
         self.file_list = self.get_list_of_img()
         self.transform = transform
 
     def get_list_of_img(self, regex="*.png"):
         files = []
         for dirpath, _, _ in os.walk(self.root_dir):
+            if dirpath in self.exclude:
+                print("Excluding " + dirpath)
+                continue
             type_files = glob.glob(os.path.join(dirpath, regex))
             files += type_files
         return sorted(files)
@@ -119,8 +123,8 @@ def get_data(args):
         torchvision.transforms.Resize((args.image_height, args.image_width)),  # args.image_size + 1/4 *args.image_size
         torchvision.transforms.Normalize(0.5, 0.5)
     ])
-    dataset = ExperimentDataset(args.csv_path, args.dataset_path, transform=transforms, features=args.features)
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    dataset = ExperimentDataset(args.csv_path, args.dataset_path, transform=transforms, features=args.features, exclude=args.exclude)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
     return dataloader
 
 
