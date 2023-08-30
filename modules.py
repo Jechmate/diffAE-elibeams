@@ -153,6 +153,7 @@ class UNet_conditional(nn.Module): # TODO try adding dropout
         self.sa5 = SelfAttention(64, img_height//2, img_width//2)
         self.up3 = Up(128, 64)
         self.sa6 = SelfAttention(64, img_height, img_width)
+        # self.outc = nn.Conv2d(64, c_out, kernel_size=3, padding=1)
         self.outc = nn.Conv2d(64, c_out, kernel_size=1)
 
         self.label_prep = nn.Sequential(

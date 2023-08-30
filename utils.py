@@ -22,11 +22,14 @@ class ExperimentDataset(Dataset):
                 on a sample.
         """
         self.features = features
-        self.settings = pd.read_csv(csv_file, engine='python')[features]
+        self.settings = pd.read_csv(csv_file, engine='python')[features].apply(self.min_max_norm)
         self.root_dir = root_dir
         self.exclude = exclude
         self.file_list = self.get_list_of_img()
         self.transform = transform
+
+    def min_max_norm(self, col):
+        return (col - col.min()) / (col.max() - col.min())
 
     def get_list_of_img(self, regex="*.png"):
         files = []
@@ -55,7 +58,6 @@ class ExperimentDataset(Dataset):
         to_tens = torchvision.transforms.ToTensor()
         settings = to_tens(settings).squeeze()
         sample = {'image': image, 'settings': settings}
-
         return sample
 
 
