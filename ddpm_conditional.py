@@ -44,7 +44,7 @@ class DCTBlur(nn.Module): # TODO use pytorch instead of np
     def get_initial_sample(self, trainloader, device):
         """Take a draw from the prior p(u_K)"""
         initial_sample = next(iter(trainloader))['image'].to(device)
-        original_images = initial_sample.clone()
+        # original_images = initial_sample.clone()
         initial_sample = self.forward(initial_sample, (self.noise_steps * torch.ones(initial_sample.shape[0]).long()).to(device))
         return initial_sample # , original_images
     
@@ -57,15 +57,14 @@ class DCTBlur(nn.Module): # TODO use pytorch instead of np
                     initial_sample.shape[0], device=device, dtype=torch.long) * i
                 # Predict less blurry mean
                 u_mean = model(u, vec_fwd_steps, settings) + u
-                if cfg_scale > 0: # TODO this may be bs
-                    uncond_mean = model(u, vec_fwd_steps, None)
-                    u_mean = torch.lerp(uncond_mean, u_mean, cfg_scale)
+                # if cfg_scale > 0: # TODO this may be bs
+                #     uncond_mean = model(u, vec_fwd_steps, None) + u
+                #     u_mean = torch.lerp(uncond_mean, u_mean, cfg_scale)
                 # Sampling step
                 noise = torch.randn_like(u)
-                u = u_mean + noise*delta # TODO no noise if last step??
-            print(type(u_mean))
-            print(u_mean.shape)
-            # print(u_mean)
+                u = u_mean + noise*delta
+            u_mean = (u_mean.clamp(-1, 1) + 1) / 2
+            u_mean = (u_mean * 255).type(torch.uint8)
             return u_mean
 
 
@@ -144,7 +143,7 @@ def train(args, model=None):
         ], lr=args.lr,
     )
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
-    mse = nn.MSELoss(reduce='sum')
+    mse = nn.MSELoss()
     diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
@@ -153,11 +152,13 @@ def train(args, model=None):
     # torch.autograd.set_detect_anomaly(True)
 
     sigma = 0.01
-    delta = sigma
-    blur_sigma_max = 20
+    delta = 0.0125
+    blur_sigma_max = 128
     blur_sigma_min = 0.5
     heat_forward_module = DCTBlur(img_width=args.image_width, img_height=args.image_height, device=args.device, noise_steps=args.noise_steps)
     heat_forward_module.prepare_blur_schedule(blur_sigma_max, blur_sigma_min)
+
+    scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -167,8 +168,8 @@ def train(args, model=None):
             settings = data['settings'].to(device)
             t = heat_forward_module.sample_timesteps(images.shape[0]).to(device)
             # x_t, noise = diffusion.noise_images(images, t)
-            if np.random.random() < 0.1:
-                settings = None
+            # if np.random.random() < 0.1:
+            #     settings = None
             # predicted_noise = model(x_t, t, settings)
             # loss = mse(noise, predicted_noise)
             blurred_batch = heat_forward_module(images, t).float()
@@ -177,14 +178,16 @@ def train(args, model=None):
             perturbed_data = noise + blurred_batch
             if epoch == 0 and i == 0:
                 summary(model, perturbed_data, t, settings, device=device)
-            diff = model(perturbed_data, t, settings)
-            prediction = perturbed_data + diff
-            loss = mse(less_blurred_batch, prediction)
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                diff = model(perturbed_data, t, settings)
+                prediction = perturbed_data + diff
+                loss = mse(less_blurred_batch, prediction)
+            scaler.scale(loss).backward()
             if (i+1) % gradient_acc == 0:
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                scaler.step(optimizer)
+                scaler.update()
                 ema.step_ema(ema_model, model)
+                optimizer.zero_grad()
                 scheduler.step()
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
@@ -206,8 +209,8 @@ def launch():
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
     args.run_name = "transfer_ihd"
-    args.epochs = 301
-    args.noise_steps = 2
+    args.epochs = 101
+    args.noise_steps = 200
     args.batch_size = 8
     args.image_height = 64
     args.image_width = 128
