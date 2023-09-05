@@ -131,7 +131,7 @@ def find_laser(images):
 
 
 def crop_by_laser(image, laser_pos):
-    return image[laser_pos[1] - 60:laser_pos[1] + 60, laser_pos[0] - 50:laser_pos[0] + 250]
+    return image[laser_pos[1] - 64:laser_pos[1] + 64, laser_pos[0] - 56:laser_pos[0] + 200]
 
 
 def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'), output_folder=Path('processed'), parameters=None):
@@ -142,7 +142,7 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
         if str(experiment) == '17' or str(experiment) == '18':
             ex_name = Path('17_18')
         elif str(experiment) == '14' or str(experiment) == '15':
-            ex_name == '12'
+            ex_name = '12'
         else:
             ex_name = experiment.name
         calibration_folder = mag_out_folder / ex_name
@@ -165,7 +165,7 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
         # Save results
         os.mkdir(output_folder/experiment)
         for i, im in enumerate(images):
-            im = (im*255).astype(np.int8)
+            im = (im*255).astype(np.uint8)
             cv2.imwrite(str(output_folder/experiment/Path(str(i) + '.png')), im)
 
 
