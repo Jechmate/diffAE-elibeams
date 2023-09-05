@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 import cv2
+import pandas as pd
 
 
 def add_fingerprint(image, size=5):
@@ -58,10 +59,11 @@ def preprocess_image(img):
 
 
 def remove_gain(img, gain_raw):
+    if not gain_raw: return img
     gain_dB = 20 * np.log10(gain_raw / 32)
     gain_lin = np.power(10, gain_dB/10)
     img_nogain = img / gain_lin
-    return img_nogain
+    return img_nogain.astype(np.uint16)
 
 
 def find_dots(images):
@@ -131,17 +133,19 @@ def find_laser(images):
 
 
 def crop_by_laser(image, laser_pos):
-    return image[laser_pos[1] - 64:laser_pos[1] + 64, laser_pos[0] - 56:laser_pos[0] + 200]
+    return image[laser_pos[1] - 128:laser_pos[1] + 128, laser_pos[0] - 62:laser_pos[0] + 450]
 
 
-def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'), output_folder=Path('processed'), parameters=None):
+def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'), output_folder=Path('processed'), parameters="params.csv"):
     # Parameters will be a path to csv when I create it
     experiments = os.listdir(experiment_folder)
+    params = pd.read_csv(parameters)["gain"]
     for experiment in tqdm(experiments):
-        experiment = Path(experiment) # TODO change February 18th no_mag for the no_mag_no_slit ones
-        if str(experiment) == '17' or str(experiment) == '18':
+        gain_raw = params[int(experiment) - 1]
+        experiment = Path(experiment)
+        if str(experiment) == '17' or str(experiment) == '18' or str(experiment) == '15':
             ex_name = Path('17_18')
-        elif str(experiment) == '14' or str(experiment) == '15':
+        elif str(experiment) == '14':
             ex_name = '12'
         else:
             ex_name = experiment.name
@@ -149,12 +153,16 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
 
         # Image preparation
         images = [read_img(a) for a in get_list_of_imgs(experiment_folder/experiment)]
+        images = [remove_gain(x, gain_raw) for x in images]
         images = [preprocess_image(a) for a in images]
         image_dots = find_dots(images)
         images = [remove_dots(a, image_dots) for a in images]
 
         # Calibration image preparation
         calib = [read_img(a) for a in get_list_of_imgs(calibration_folder)]
+        if ex_name == '12':
+            for x in calib:
+                x[:, 1300:] = 0 # No_mag for experiment 12 has a strange bright line at the right part of all images
         calib = [preprocess_image(a) for a in calib]
         calib_dots = find_dots(calib)
         calib = [remove_dots(a, calib_dots) for a in calib]
