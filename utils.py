@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 import cv2
 import glob
+import dataset
 
 class ExperimentDataset(Dataset):
     """Face settings dataset."""
@@ -102,6 +103,50 @@ def plot_images(images):
         plt.axis("off")
         plt.title(f"{i}", size=12)
 
+    plt.show()
+    
+    
+def plot_average_image_pairs(root_folder, electron_pointing_pixel=62, noise=0.11):
+    subfolders = sorted([f.path for f in os.scandir(root_folder) if f.is_dir()])
+    n = len(subfolders)
+    fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
+    fig.subplots_adjust(hspace=0.35)  # Increase the space between rows
+    fig.subplots_adjust(wspace=0.1)  # Decrease the space between columns
+    for i, subfolder in enumerate(subfolders):
+        images = []
+        for filename in os.listdir(subfolder):
+            if filename.endswith(".png"):
+                im = cv2.imread(os.path.join(subfolder, filename), cv2.IMREAD_UNCHANGED)
+                images.append(im)
+        avg_im = np.mean(images, axis=0)
+        deflection_MeV, spectrum_calibrated = dataset.get_1d(avg_im/255, electron_pointing_pixel=electron_pointing_pixel, noise=noise)
+
+        axs[i, 1].plot(deflection_MeV, spectrum_calibrated)  # plot without fit
+        axs[i, 1].set_title('Reconstructed Spectrum')
+        axs[i, 1].set_ylabel('Spectral Intensity (pA/MeV)')
+        axs[i, 1].set_xlabel('Energy (MeV)')
+        axs[i, 1].set_xlim([2, 20])
+        axs[i, 0].imshow(avg_im, vmin=0, vmax=255)
+        axs[i, 0].set_title(os.path.basename(subfolder))
+    plt.show()
+    
+    
+def plot_image_pairs(images, electron_pointing_pixel=62, noise=0.11, xlim=[2,20]):
+    n = len(images)
+    fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
+    fig.subplots_adjust(hspace=0.35)  # Increase the space between rows
+    fig.subplots_adjust(wspace=0.1)  # Decrease the space between columns
+    for i in range(n):
+        im = images[i].cpu().permute(1, 2, 0).numpy()
+        deflection_MeV, spectrum_calibrated = dataset.get_1d(im/255, electron_pointing_pixel=electron_pointing_pixel, noise=noise)
+
+        axs[i, 1].plot(deflection_MeV, spectrum_calibrated)  # plot without fit
+        axs[i, 1].set_title('Reconstructed Spectrum')
+        axs[i, 1].set_ylabel('Spectral Intensity (pA/MeV)')
+        axs[i, 1].set_xlabel('Energy (MeV)')
+        axs[i, 1].set_xlim(xlim)
+        axs[i, 0].imshow(im, vmin=0, vmax=255)
+        axs[i, 0].set_title(f"Image {i}")
     plt.show()
 
 
