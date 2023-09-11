@@ -1,5 +1,3 @@
-# TODO Experiment 14 image 17 (and others) - weird black marks on high energy areas
-# remove gain from images via :  gain(dB) = 20 * log10 (GainRaw / 32), db to linear: gain(lin) = 10^(gain(dB)/10) src: https://docs.baslerweb.com/gain, https://www.quora.com/What-is-the-formula-for-converting-decibels-to-linear-units
 # Camera used: Basler aca2040-25gm
 
 import math
@@ -10,6 +8,7 @@ from tqdm import tqdm
 from pathlib import Path
 import cv2
 import pandas as pd
+import scipy
 
 
 def add_fingerprint(image, size=5):
@@ -58,6 +57,7 @@ def preprocess_image(img):
     return I_norm
 
 
+# srcs: https://docs.baslerweb.com/gain, https://www.quora.com/What-is-the-formula-for-converting-decibels-to-linear-units
 def remove_gain(img, gain_raw):
     if not gain_raw: return img
     gain_dB = 20 * np.log10(gain_raw / 32)
@@ -136,7 +136,44 @@ def crop_by_laser(image, laser_pos):
     return image[laser_pos[1] - 128:laser_pos[1] + 128, laser_pos[0] - 62:laser_pos[0] + 450]
 
 
-def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'), output_folder=Path('processed'), parameters="params.csv"):
+def get_1d(image, electron_pointing_pixel, noise=0.11): # image should be 0 - 1 values
+    image[image <= noise] = 0
+    pixel_in_mm = 0.137 
+    acquisition_time_ms = 10
+    hor_image_size = image.shape[1]
+    horizontal_profile = np.sum(image, axis=0)
+    spectrum_in_pixel = np.zeros(hor_image_size)
+    spectrum_in_MeV = np.zeros(hor_image_size)
+    deflection_MeV = np.zeros(hor_image_size)
+    deflection_mm = np.zeros(hor_image_size)
+    mat = scipy.io.loadmat('Deflection_curve_Mixture_Feb28.mat')
+    for i in range(hor_image_size): # defining the mm in the image, added + 1
+        if i <= electron_pointing_pixel:
+            deflection_mm[i] = 0
+        else:
+            deflection_mm[i] = (i - electron_pointing_pixel) * pixel_in_mm
+    #---Assigning to each pixel its value in MeV with the loaded deflection curve------
+    for i in range(electron_pointing_pixel, len(deflection_MeV)):
+        xq = deflection_mm[i]
+        if xq > 1:
+            deflection_MeV[i] = scipy.interpolate.interp1d(mat['deflection_curve_mm'][:, 0],
+                                                           mat['deflection_curve_MeV'][:, 0],
+                                                           kind='linear',
+                                                           assume_sorted=False,
+                                                           bounds_error=False)(xq)
+    for j in range(electron_pointing_pixel, hor_image_size):
+        spectrum_in_pixel[j] = horizontal_profile[j]
+    spectrum_in_MeV[0] = spectrum_in_pixel[0]
+    for j in range(electron_pointing_pixel, hor_image_size):
+        diff = deflection_MeV[j-1] - deflection_MeV[j]
+        spectrum_in_MeV[j] = 0 if diff == 0 else (spectrum_in_pixel[j]) / diff
+        # spectrum_in_MeV[j] = (spectrum_in_pixel[j]) / diff
+
+    spectrum_calibrated = (spectrum_in_MeV * 3.706) / (acquisition_time_ms) # *image_gain
+    return deflection_MeV, spectrum_calibrated
+
+
+def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'), output_folder=Path('with_gain'), parameters="params.csv"):
     # Parameters will be a path to csv when I create it
     experiments = os.listdir(experiment_folder)
     params = pd.read_csv(parameters)["gain"]
@@ -153,7 +190,7 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
 
         # Image preparation
         images = [read_img(a) for a in get_list_of_imgs(experiment_folder/experiment)]
-        images = [remove_gain(x, gain_raw) for x in images]
+        # images = [remove_gain(x, gain_raw) for x in images]
         images = [preprocess_image(a) for a in images]
         image_dots = find_dots(images)
         images = [remove_dots(a, image_dots) for a in images]
