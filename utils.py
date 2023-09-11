@@ -122,7 +122,7 @@ def get_data(args):
     transforms = torchvision.transforms.Compose([
         # torchvision.transforms.Grayscale(), # TODO hope this doesnt do any funny business with the data
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Resize((args.image_height, args.image_width)),  # args.image_size + 1/4 *args.image_size
+        torchvision.transforms.Resize((args.image_height, args.image_width), antialias=True),  # args.image_size + 1/4 *args.image_size
         torchvision.transforms.Normalize(0.5, 0.5)
     ])
     dataset = ExperimentDataset(args.csv_path, args.dataset_path, transform=transforms, features=args.features, exclude=args.exclude)

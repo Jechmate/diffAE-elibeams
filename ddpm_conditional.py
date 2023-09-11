@@ -12,6 +12,7 @@ import logging
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torchsummary import summary
+import torchvision.transforms.functional as f
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
@@ -95,7 +96,7 @@ class Diffusion:
     def sample_timesteps(self, n):
         return torch.randint(low=1, high=self.noise_steps, size=(n,))
 
-    def sample(self, model, n, settings, cfg_scale=3):
+    def sample(self, model, n, settings, cfg_scale=3, resize=None):
         logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
@@ -117,40 +118,41 @@ class Diffusion:
         model.train()
         x = (x.clamp(-1, 1) + 1) / 2
         x = (x * 255).type(torch.uint8)
+        if resize:
+            x = f.resize(x, resize, antialias=True)
         return x
 
 
-def train(args, model=None):
+def train_IHD(args, model=None):
     setup_logging(args.run_name)
     device = args.device
     dataloader = get_data(args)
     gradient_acc = args.grad_acc
     steps_per_epoch = len(dataloader) / gradient_acc
     if not model:
-        model = UNet_conditional(img_height=args.image_height, img_width=args.image_width, feat_num=len(args.features)).to(device)
-    optimizer = optim.AdamW([
-            {"params": model.inc.parameters(), "lr": 1e-3},
-            {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
-            {"params": model.down2.maxpool_conv.parameters(), "lr": 1e-4},
-            {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-6},
-            {"params": model.bot1.parameters(), "lr": 1e-6},
-            {"params": model.bot2.parameters(), "lr": 1e-6},
-            {"params": model.bot3.parameters(), "lr": 1e-6},
-            {"params": model.up1.conv.parameters(), "lr": 1e-6},
-            {"params": model.up2.conv.parameters(), "lr": 1e-4},
-            {"params": model.up3.conv.parameters(), "lr": 1e-3},
-            {"params": model.outc.parameters(), "lr": 1e-3},
-        ], lr=args.lr,
-    )
+        model = UNet_conditional(img_height=args.image_height, img_width=args.image_width, device=device, feat_num=len(args.features)).to(device)
+        optimizer = optim.AdamW(model.parameters(), lr=args.lr)
+    else:
+        optimizer = optim.AdamW([
+                {"params": model.inc.parameters(), "lr": 1e-3},
+                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
+                {"params": model.down2.maxpool_conv.parameters(), "lr": 1e-4},
+                {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-6},
+                {"params": model.bot1.parameters(), "lr": 1e-6},
+                {"params": model.bot2.parameters(), "lr": 1e-6},
+                {"params": model.bot3.parameters(), "lr": 1e-6},
+                {"params": model.up1.conv.parameters(), "lr": 1e-6},
+                {"params": model.up2.conv.parameters(), "lr": 1e-4},
+                {"params": model.up3.conv.parameters(), "lr": 1e-3},
+                {"params": model.outc.parameters(), "lr": 1e-3},
+            ], lr=args.lr,
+        )
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
     mse = nn.MSELoss()
-    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
     ema = EMA(0.995)
     ema_model = copy.deepcopy(model).eval().requires_grad_(False)
-    # torch.autograd.set_detect_anomaly(True)
-
     sigma = 0.01
     delta = 0.0125
     blur_sigma_max = 128
@@ -167,11 +169,6 @@ def train(args, model=None):
             images = data['image'].to(device)
             settings = data['settings'].to(device)
             t = heat_forward_module.sample_timesteps(images.shape[0]).to(device)
-            # x_t, noise = diffusion.noise_images(images, t)
-            # if np.random.random() < 0.1:
-            #     settings = None
-            # predicted_noise = model(x_t, t, settings)
-            # loss = mse(noise, predicted_noise)
             blurred_batch = heat_forward_module(images, t).float()
             less_blurred_batch = heat_forward_module(images, t-1).float()
             noise = torch.randn_like(blurred_batch) * sigma
@@ -185,18 +182,85 @@ def train(args, model=None):
             scaler.scale(loss).backward()
             if (i+1) % gradient_acc == 0:
                 scaler.step(optimizer)
+                optimizer.zero_grad()
                 scaler.update()
                 ema.step_ema(ema_model, model)
-                optimizer.zero_grad()
                 scheduler.step()
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
-        if epoch % 10 == 0:# and epoch > 0:
+        if epoch % 10 == 0:
             settings = torch.Tensor([13.,15,20.]).to(device).unsqueeze(0)
-            # sampled_images = diffusion.sample(model, n=args.batch_size, settings=settings)
-            # ema_sampled_images = diffusion.sample(ema_model, n=args.batch_size, settings=settings)
             ema_sampled_images = heat_forward_module.sample(trainloader=get_data(args), device=args.device, model=ema_model, delta=delta, settings=settings)
+            save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
+            torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
+            torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
+            
+
+def train(args, model=None):
+    setup_logging(args.run_name)
+    device = args.device
+    dataloader = get_data(args)
+    gradient_acc = args.grad_acc
+    steps_per_epoch = len(dataloader) / gradient_acc
+    if not model:
+        model = UNet_conditional(img_height=args.image_height, img_width=args.image_width, device=args.device, feat_num=len(args.features)).to(device)
+        optimizer = optim.AdamW(model.parameters(), lr=args.lr)
+    else:
+        optimizer = optim.AdamW([
+                {"params": model.inc.parameters(), "lr": 1e-3},
+                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
+                {"params": model.down2.maxpool_conv.parameters(), "lr": 1e-4},
+                {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-6},
+                {"params": model.bot1.parameters(), "lr": 1e-6},
+                {"params": model.bot2.parameters(), "lr": 1e-6},
+                {"params": model.bot3.parameters(), "lr": 1e-6},
+                {"params": model.up1.conv.parameters(), "lr": 1e-6},
+                {"params": model.up2.conv.parameters(), "lr": 1e-4},
+                {"params": model.up3.conv.parameters(), "lr": 1e-3},
+                {"params": model.outc.parameters(), "lr": 1e-3},
+            ], lr=args.lr,
+        )
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
+    mse = nn.MSELoss()
+    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps)
+    logger = SummaryWriter(os.path.join("runs", args.run_name))
+    l = len(dataloader)
+    ema = EMA(0.995)
+    ema_model = copy.deepcopy(model).eval().requires_grad_(False).to(device)
+    scaler = torch.cuda.amp.grad_scaler.GradScaler()
+
+    for epoch in range(args.epochs):
+        logging.info(f"Starting epoch {epoch}:")
+        pbar = tqdm(dataloader)
+        for i, data in enumerate(pbar):
+            images = data['image'].to(device)
+            settings = data['settings'].to(device)
+            t = diffusion.sample_timesteps(images.shape[0]).to(device)
+            x_t, noise = diffusion.noise_images(images, t)
+            # if epoch == 0 and i == 0:
+            #     summary(model, x_t, t, settings, device=device)
+            if np.random.random() < 0.1:
+                settings = None
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                predicted_noise = model(x_t, t, settings)
+                loss = mse(noise, predicted_noise)
+            scaler.scale(loss).backward()
+            if (i+1) % gradient_acc == 0:
+                scaler.step(optimizer)
+                optimizer.zero_grad()
+                scaler.update()
+                ema.step_ema(ema_model, model)
+                scheduler.step()
+
+            pbar.set_postfix(MSE=loss.item())
+            logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+
+        if epoch % 10 == 0:# and epoch > 0:
+            settings = torch.Tensor([13.,15.,20.]).to(device).unsqueeze(0)
+            # sampled_images = diffusion.sample(model, n=args.batch_size, settings=settings)
+            ema_sampled_images = diffusion.sample(ema_model, n=args.batch_size, settings=settings, resize=(256, 512))
+            # plot_images(sampled_images)
             # save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
             save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
             # torch.save(model.state_dict(), os.path.join("models", args.run_name, f"ckpt.pt"))
@@ -208,24 +272,24 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "transfer_ihd"
-    args.epochs = 101
-    args.noise_steps = 200
-    args.batch_size = 8
+    args.run_name = "notrans_256"
+    args.epochs = 301
+    args.noise_steps = 700
+    args.batch_size = 6
     args.image_height = 64
     args.image_width = 128
     args.features = ["E","P","ms"]
     args.dataset_path = r"train"
     args.csv_path = "params.csv"
-    args.device = "cuda:2"
+    args.device = "cuda:1"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
 
-    model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
-    ckpt = torch.load("models/transfered.pt")
-    model.load_state_dict(ckpt)
-    train(args, model)
+    # model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
+    # ckpt = torch.load("models/transfered.pt")
+    # model.load_state_dict(ckpt)
+    train(args)
 
 
 if __name__ == '__main__':
