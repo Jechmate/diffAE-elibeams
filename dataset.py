@@ -136,7 +136,10 @@ def crop_by_laser(image, laser_pos):
     return image[laser_pos[1] - 128:laser_pos[1] + 128, laser_pos[0] - 62:laser_pos[0] + 450]
 
 
-def get_1d(image, electron_pointing_pixel, noise=0.11): # image should be 0 - 1 values
+def get_1d(image, electron_pointing_pixel, noise=0.11, image_gain=0): # image should be 0 - 1 values
+    image_gain /= 32 # from original script
+    # if image_gain:
+    #     noise *= image_gain # this part is missing in the original script
     image[image <= noise] = 0
     pixel_in_mm = 0.137 
     acquisition_time_ms = 10
@@ -169,7 +172,7 @@ def get_1d(image, electron_pointing_pixel, noise=0.11): # image should be 0 - 1 
         spectrum_in_MeV[j] = 0 if diff == 0 else (spectrum_in_pixel[j]) / diff
         # spectrum_in_MeV[j] = (spectrum_in_pixel[j]) / diff
 
-    spectrum_calibrated = (spectrum_in_MeV * 3.706) / (acquisition_time_ms) # *image_gain
+    spectrum_calibrated = (spectrum_in_MeV * 3.706) / (acquisition_time_ms*image_gain) if image_gain else (spectrum_in_MeV * 3.706) / acquisition_time_ms
     return deflection_MeV, spectrum_calibrated
 
 
