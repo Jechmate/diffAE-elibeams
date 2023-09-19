@@ -23,7 +23,7 @@ class ExperimentDataset(Dataset):
                 on a sample.
         """
         self.features = features
-        self.settings = pd.read_csv(csv_file, engine='python')[features].apply(self.min_max_norm)
+        self.settings = pd.read_csv(csv_file, engine='python')[features]# .apply(self.min_max_norm)
         self.root_dir = root_dir
         self.exclude = exclude
         self.file_list = self.get_list_of_img()
@@ -106,7 +106,7 @@ def plot_images(images):
     plt.show()
     
     
-def plot_average_image_pairs(root_folder, electron_pointing_pixel=62, noise=0.11):
+def plot_average_image_pairs(root_folder, electron_pointing_pixel=62):
     subfolders = sorted([f.path for f in os.scandir(root_folder) if f.is_dir()])
     n = len(subfolders)
     fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
@@ -119,7 +119,7 @@ def plot_average_image_pairs(root_folder, electron_pointing_pixel=62, noise=0.11
                 im = cv2.imread(os.path.join(subfolder, filename), cv2.IMREAD_UNCHANGED)
                 images.append(im)
         avg_im = np.mean(images, axis=0)
-        deflection_MeV, spectrum_calibrated = dataset.get_1d(avg_im/255, electron_pointing_pixel=electron_pointing_pixel, noise=noise)
+        deflection_MeV, spectrum_calibrated = dataset.get_1d(avg_im/255, electron_pointing_pixel=electron_pointing_pixel)
 
         axs[i, 1].plot(deflection_MeV, spectrum_calibrated)  # plot without fit
         axs[i, 1].set_title('Reconstructed Spectrum')
@@ -131,14 +131,14 @@ def plot_average_image_pairs(root_folder, electron_pointing_pixel=62, noise=0.11
     plt.show()
     
     
-def plot_image_pairs(images, electron_pointing_pixel=62, noise=0.11, xlim=[2,20]):
+def plot_image_pairs(images, electron_pointing_pixel=62, xlim=[2,20]):
     n = len(images)
     fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
     fig.subplots_adjust(hspace=0.35)  # Increase the space between rows
     fig.subplots_adjust(wspace=0.1)  # Decrease the space between columns
     for i in range(n):
         im = images[i].cpu().permute(1, 2, 0).numpy()
-        deflection_MeV, spectrum_calibrated = dataset.get_1d(im/255, electron_pointing_pixel=electron_pointing_pixel, noise=noise)
+        deflection_MeV, spectrum_calibrated = dataset.get_1d(im/255, electron_pointing_pixel=electron_pointing_pixel)
 
         axs[i, 1].plot(deflection_MeV, spectrum_calibrated)  # plot without fit
         axs[i, 1].set_title('Reconstructed Spectrum')
@@ -148,6 +148,30 @@ def plot_image_pairs(images, electron_pointing_pixel=62, noise=0.11, xlim=[2,20]
         axs[i, 0].imshow(im, vmin=0, vmax=255)
         axs[i, 0].set_title(f"Image {i}")
     plt.show()
+
+
+def stitch_images(directory):
+    # Get the list of image files in the directory
+    image_files = sorted([os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.png') or f.endswith('.jpg')])
+    image_files.sort(key=lambda f: int(os.path.basename(f).split('_')[0]))
+
+    # Open the images and get their sizes
+    images = [Image.open(f) for f in image_files]
+    widths, heights = zip(*(i.size for i in images))
+
+    # Create a new image with the combined height of all images
+    total_height = sum(heights)
+    max_width = max(widths)
+    stitched_image = Image.new('RGB', (max_width, total_height))
+
+    # Paste the images into the stitched image
+    y_offset = 0
+    for img in images:
+        stitched_image.paste(img, (0, y_offset))
+        y_offset += img.size[1]
+
+    # Save the stitched image
+    stitched_image.save(os.path.join(directory, 'stitched_image.png'))
 
 
 def save_samples(images, folder="samples"):

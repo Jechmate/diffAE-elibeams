@@ -136,10 +136,16 @@ def crop_by_laser(image, laser_pos):
     return image[laser_pos[1] - 128:laser_pos[1] + 128, laser_pos[0] - 62:laser_pos[0] + 450]
 
 
-def get_1d(image, electron_pointing_pixel, noise=0.11, image_gain=0): # image should be 0 - 1 values
+def get_1d(image, electron_pointing_pixel, image_gain=0): # image should be 0 - 1 values
     image_gain /= 32 # from original script
     # if image_gain:
     #     noise *= image_gain # this part is missing in the original script
+    # image = cv2.medianBlur((image * 255).astype(np.uint8), ksize=5)/255
+    noise = np.median([image[int(image.shape[0]*0.9),int(image.shape[1]*0.05)],
+                       image[int(image.shape[0]*0.9),int(image.shape[1]*0.9)],
+                       image[int(image.shape[0]*0.1),int(image.shape[1]*0.9)]])
+    # noise = np.percentile(image, 70)
+    print(noise)
     image[image <= noise] = 0
     pixel_in_mm = 0.137 
     acquisition_time_ms = 10

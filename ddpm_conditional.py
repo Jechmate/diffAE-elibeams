@@ -22,7 +22,6 @@ class DCTBlur(nn.Module): # TODO use pytorch instead of np
     def __init__(self, img_width, img_height, device, noise_steps):
         super(DCTBlur, self).__init__()
         self.device = device
-        self.blur_schedule = torch.Tensor().to(self.device)
         self.noise_steps = noise_steps
         freqs_hor = np.pi*torch.linspace(0, img_width-1,img_width).to(device)/img_width
         freqs_ver = np.pi*torch.linspace(0, img_height-1,img_height).to(device)/img_height
@@ -32,6 +31,7 @@ class DCTBlur(nn.Module): # TODO use pytorch instead of np
         return torch.randint(low=1, high=self.noise_steps, size=(n,))
 
     def prepare_blur_schedule(self, blur_sigma_max, blur_sigma_min):
+        self.blur_schedule = torch.Tensor().to(self.device)
         self.blur_schedule = np.exp(np.linspace(np.log(blur_sigma_min), np.log(blur_sigma_max), self.noise_steps))
         self.blur_schedule = torch.Tensor(np.array([0] + list(self.blur_schedule))).to(self.device)  # Add the k=0 timestep
 
@@ -49,7 +49,7 @@ class DCTBlur(nn.Module): # TODO use pytorch instead of np
         initial_sample = self.forward(initial_sample, (self.noise_steps * torch.ones(initial_sample.shape[0]).long()).to(device))
         return initial_sample # , original_images
     
-    def sample(self, trainloader, device, model, delta, settings, cfg_scale=3):
+    def sample(self, trainloader, device, model, delta, settings, cfg_scale=3, resize=None):
         initial_sample = self.get_initial_sample(trainloader, device)
         with torch.no_grad():
             u = initial_sample.to(device).float()
@@ -58,14 +58,16 @@ class DCTBlur(nn.Module): # TODO use pytorch instead of np
                     initial_sample.shape[0], device=device, dtype=torch.long) * i
                 # Predict less blurry mean
                 u_mean = model(u, vec_fwd_steps, settings) + u
-                # if cfg_scale > 0: # TODO this may be bs
-                #     uncond_mean = model(u, vec_fwd_steps, None) + u
-                #     u_mean = torch.lerp(uncond_mean, u_mean, cfg_scale)
+                if cfg_scale > 0: # TODO this may be bs
+                    uncond_mean = model(u, vec_fwd_steps, None) + u
+                    u_mean = torch.lerp(uncond_mean, u_mean, cfg_scale)
                 # Sampling step
                 noise = torch.randn_like(u)
                 u = u_mean + noise*delta
             u_mean = (u_mean.clamp(-1, 1) + 1) / 2
             u_mean = (u_mean * 255).type(torch.uint8)
+            if resize:
+                u_mean = f.resize(u_mean, resize, antialias=True)
             return u_mean
 
 
@@ -122,8 +124,8 @@ class Diffusion:
             x = f.resize(x, resize, antialias=True)
         return x
 
-
 def train_IHD(args, model=None):
+    # dist.init_process_group(backend='nccl', init_method='env://', rank=torch.cuda.device_count(), world_size=1)
     setup_logging(args.run_name)
     device = args.device
     dataloader = get_data(args)
@@ -160,8 +162,6 @@ def train_IHD(args, model=None):
     heat_forward_module = DCTBlur(img_width=args.image_width, img_height=args.image_height, device=args.device, noise_steps=args.noise_steps)
     heat_forward_module.prepare_blur_schedule(blur_sigma_max, blur_sigma_min)
 
-    scaler = torch.cuda.amp.grad_scaler.GradScaler()
-
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
         pbar = tqdm(dataloader)
@@ -173,25 +173,24 @@ def train_IHD(args, model=None):
             less_blurred_batch = heat_forward_module(images, t-1).float()
             noise = torch.randn_like(blurred_batch) * sigma
             perturbed_data = noise + blurred_batch
-            if epoch == 0 and i == 0:
-                summary(model, perturbed_data, t, settings, device=device)
-            with torch.autocast(device_type="cuda", dtype=torch.float16):
-                diff = model(perturbed_data, t, settings)
-                prediction = perturbed_data + diff
-                loss = mse(less_blurred_batch, prediction)
-            scaler.scale(loss).backward()
-            if (i+1) % gradient_acc == 0:
-                scaler.step(optimizer)
-                optimizer.zero_grad()
-                scaler.update()
-                ema.step_ema(ema_model, model)
-                scheduler.step()
+            # if epoch == 0 and i == 0:
+            #     print("summary:")
+            #     summary(model, perturbed_data, t, settings, device=device)
+            #     print("After summary")
+            diff = model(perturbed_data, t, settings)
+            prediction = perturbed_data + diff
+            loss = mse(less_blurred_batch, prediction)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            ema.step_ema(ema_model, model)
+            scheduler.step()
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
         if epoch % 10 == 0:
             settings = torch.Tensor([13.,15,20.]).to(device).unsqueeze(0)
-            ema_sampled_images = heat_forward_module.sample(trainloader=get_data(args), device=args.device, model=ema_model, delta=delta, settings=settings)
+            ema_sampled_images = heat_forward_module.sample(trainloader=get_data(args), device=args.device, model=ema_model, delta=delta, settings=settings, resize=(256, 512))
             save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
             torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
             torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
@@ -204,6 +203,7 @@ def train(args, model=None):
     gradient_acc = args.grad_acc
     steps_per_epoch = len(dataloader) / gradient_acc
     if not model:
+        print("Training from scratch")
         model = UNet_conditional(img_height=args.image_height, img_width=args.image_width, device=args.device, feat_num=len(args.features)).to(device)
         optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     else:
@@ -226,9 +226,8 @@ def train(args, model=None):
     diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
-    ema = EMA(0.995)
+    ema = EMA(0.8)
     ema_model = copy.deepcopy(model).eval().requires_grad_(False).to(device)
-    scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -238,20 +237,18 @@ def train(args, model=None):
             settings = data['settings'].to(device)
             t = diffusion.sample_timesteps(images.shape[0]).to(device)
             x_t, noise = diffusion.noise_images(images, t)
-            # if epoch == 0 and i == 0:
-            #     summary(model, x_t, t, settings, device=device)
+            if epoch == 0 and i == 0:
+                summary(model, x_t, t, settings, device=device)
             if np.random.random() < 0.1:
                 settings = None
-            with torch.autocast(device_type="cuda", dtype=torch.float16):
-                predicted_noise = model(x_t, t, settings)
-                loss = mse(noise, predicted_noise)
-            scaler.scale(loss).backward()
-            if (i+1) % gradient_acc == 0:
-                scaler.step(optimizer)
-                optimizer.zero_grad()
-                scaler.update()
-                ema.step_ema(ema_model, model)
-                scheduler.step()
+            predicted_noise = model(x_t, t, settings)
+            loss = mse(noise, predicted_noise)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            ema.step_ema(ema_model, model)
+            scheduler.step()
+            # if (i+1) % gradient_acc == 0:
 
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
@@ -272,24 +269,24 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "notrans_256"
+    args.run_name = "classic_beta035"
     args.epochs = 301
-    args.noise_steps = 700
-    args.batch_size = 6
+    args.noise_steps = 200
+    args.batch_size = 7
     args.image_height = 64
     args.image_width = 128
     args.features = ["E","P","ms"]
-    args.dataset_path = r"train"
+    args.dataset_path = r"with_gain"
     args.csv_path = "params.csv"
-    args.device = "cuda:1"
+    args.device = "cuda:0"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
 
-    # model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
-    # ckpt = torch.load("models/transfered.pt")
-    # model.load_state_dict(ckpt)
-    train(args)
+    model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
+    ckpt = torch.load("models/transfered.pt")
+    model.load_state_dict(ckpt)
+    train(args, model)
 
 
 if __name__ == '__main__':
