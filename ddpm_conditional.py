@@ -212,18 +212,20 @@ def train(args, model=None):
                 {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
                 {"params": model.down2.maxpool_conv.parameters(), "lr": 1e-4},
                 {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-6},
+                {"params": model.down4.maxpool_conv.parameters(), "lr": 1e-6},
                 {"params": model.bot1.parameters(), "lr": 1e-6},
                 {"params": model.bot2.parameters(), "lr": 1e-6},
                 {"params": model.bot3.parameters(), "lr": 1e-6},
                 {"params": model.up1.conv.parameters(), "lr": 1e-6},
-                {"params": model.up2.conv.parameters(), "lr": 1e-4},
-                {"params": model.up3.conv.parameters(), "lr": 1e-3},
+                {"params": model.up2.conv.parameters(), "lr": 1e-6},
+                {"params": model.up3.conv.parameters(), "lr": 1e-4},
+                {"params": model.up4.conv.parameters(), "lr": 1e-3},
                 {"params": model.outc.parameters(), "lr": 1e-3},
             ], lr=args.lr,
         )
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
     mse = nn.MSELoss()
-    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps)
+    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps, beta_end=args.beta_end)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
     ema = EMA(0.8)
@@ -269,10 +271,11 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "classic_beta035"
+    args.run_name = "classic_4blocks_bend003"
     args.epochs = 301
-    args.noise_steps = 200
-    args.batch_size = 7
+    args.noise_steps = 700
+    args.beta_end = 0.003
+    args.batch_size = 5
     args.image_height = 64
     args.image_width = 128
     args.features = ["E","P","ms"]
@@ -284,7 +287,7 @@ def launch():
     args.grad_acc = 1
 
     model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
-    ckpt = torch.load("models/transfered.pt")
+    ckpt = torch.load("models/transfered_4block.pt")
     model.load_state_dict(ckpt)
     train(args, model)
 
