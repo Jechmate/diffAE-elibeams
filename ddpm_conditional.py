@@ -157,7 +157,7 @@ def train_IHD(args, model=None):
     ema_model = copy.deepcopy(model).eval().requires_grad_(False)
     sigma = 0.01
     delta = 0.0125
-    blur_sigma_max = 128
+    blur_sigma_max = 64
     blur_sigma_min = 0.5
     heat_forward_module = DCTBlur(img_width=args.image_width, img_height=args.image_height, device=args.device, noise_steps=args.noise_steps)
     heat_forward_module.prepare_blur_schedule(blur_sigma_max, blur_sigma_min)
@@ -173,9 +173,8 @@ def train_IHD(args, model=None):
             less_blurred_batch = heat_forward_module(images, t-1).float()
             noise = torch.randn_like(blurred_batch) * sigma
             perturbed_data = noise + blurred_batch
-            # if epoch == 0 and i == 0:
-            #     print("summary:")
-            #     summary(model, perturbed_data, t, settings, device=device)
+            if epoch == 0 and i == 0:
+                summary(model, perturbed_data, t, settings, device=device)
             #     print("After summary")
             diff = model(perturbed_data, t, settings)
             prediction = perturbed_data + diff
@@ -208,19 +207,17 @@ def train(args, model=None):
         optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     else:
         optimizer = optim.AdamW([
-                {"params": model.inc.parameters(), "lr": 1e-3},
-                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
+                {"params": model.inc.parameters(), "lr": 1e-2},
+                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-4},
                 {"params": model.down2.maxpool_conv.parameters(), "lr": 1e-4},
-                {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-6},
-                {"params": model.down4.maxpool_conv.parameters(), "lr": 1e-6},
+                {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-4},
                 {"params": model.bot1.parameters(), "lr": 1e-6},
                 {"params": model.bot2.parameters(), "lr": 1e-6},
                 {"params": model.bot3.parameters(), "lr": 1e-6},
-                {"params": model.up1.conv.parameters(), "lr": 1e-6},
-                {"params": model.up2.conv.parameters(), "lr": 1e-6},
+                {"params": model.up1.conv.parameters(), "lr": 1e-4},
+                {"params": model.up2.conv.parameters(), "lr": 1e-4},
                 {"params": model.up3.conv.parameters(), "lr": 1e-4},
-                {"params": model.up4.conv.parameters(), "lr": 1e-3},
-                {"params": model.outc.parameters(), "lr": 1e-3},
+                {"params": model.outc.parameters(), "lr": 1e-2},
             ], lr=args.lr,
         )
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
@@ -255,39 +252,46 @@ def train(args, model=None):
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
-        if epoch % 10 == 0:# and epoch > 0:
-            settings = torch.Tensor([13.,15.,20.]).to(device).unsqueeze(0)
-            # sampled_images = diffusion.sample(model, n=args.batch_size, settings=settings)
-            ema_sampled_images = diffusion.sample(ema_model, n=args.batch_size, settings=settings, resize=(256, 512))
-            # plot_images(sampled_images)
-            # save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
+        if args.sample_freq and epoch % args.sample_freq == 0:# and epoch > 0:
+            settings = torch.Tensor(args.sample_settings).to(device).unsqueeze(0)
+            ema_sampled_images = diffusion.sample(ema_model, n=args.sample_size, settings=settings, resize=(256, 512))
             save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
-            # torch.save(model.state_dict(), os.path.join("models", args.run_name, f"ckpt.pt"))
             torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
             torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
+    
+    if not args.sample_freq:
+        if args.sample_size:
+            settings = torch.Tensor(args.sample_settings).to(device).unsqueeze(0)
+            ema_sampled_images = diffusion.sample(ema_model, n=args.sample_size, settings=settings, resize=(256, 512))
+            save_samples(ema_sampled_images, os.path.join("results", args.run_name))
+        torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
+        torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
 
 
 def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "classic_4blocks_bend003"
-    args.epochs = 301
+    args.run_name = "classic_500ep_246lr"
+    args.epochs = 501
     args.noise_steps = 700
-    args.beta_end = 0.003
-    args.batch_size = 5
+    args.beta_end = 0.02
+    args.batch_size = 8
     args.image_height = 64
     args.image_width = 128
     args.features = ["E","P","ms"]
     args.dataset_path = r"with_gain"
     args.csv_path = "params.csv"
-    args.device = "cuda:0"
-    args.lr = 1e-3
+    args.device = "cuda:1"
+    args.lr = 1e-2
     args.exclude = []# ['train/19']
     args.grad_acc = 1
+    args.sample_freq = 10
+    args.sample_settings = [13.,15.,20.]
+    args.sample_size = 8
 
     model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
-    ckpt = torch.load("models/transfered_4block.pt")
+    ckpt = torch.load("models/transfered.pt", map_location=args.device)
     model.load_state_dict(ckpt)
     train(args, model)
 

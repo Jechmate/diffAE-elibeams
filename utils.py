@@ -145,7 +145,7 @@ def plot_image_pairs(images, electron_pointing_pixel=62, xlim=[2,20]):
         axs[i, 1].set_ylabel('Spectral Intensity (pA/MeV)')
         axs[i, 1].set_xlabel('Energy (MeV)')
         axs[i, 1].set_xlim(xlim)
-        axs[i, 0].imshow(im, vmin=0, vmax=255)
+        axs[i, 0].imshow(im, vmin=0, vmax=255, cmap='inferno')
         axs[i, 0].set_title(f"Image {i}")
     plt.show()
 

@@ -16,7 +16,7 @@ args.exclude = []# ['train/19']
 
 dataloader = get_data(args)
 
-diff = Diffusion(device="cpu", img_height=args.image_height, img_width=args.image_width, noise_steps=700, beta_end=0.003, beta_start=0.0001)
+diff = Diffusion(device="cpu", img_height=args.image_height, img_width=args.image_width, noise_steps=700, beta_end=0.01, beta_start=0.0001)
 
 
 image = next(iter(dataloader))['image']
