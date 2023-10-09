@@ -10,6 +10,8 @@ import numpy as np
 import cv2
 import glob
 import dataset
+import scipy
+import torchvision.transforms.functional as f
 
 class ExperimentDataset(Dataset):
     """Face settings dataset."""
@@ -204,3 +206,54 @@ def setup_logging(run_name):
     os.makedirs("results", exist_ok=True)
     os.makedirs(os.path.join("models", run_name), exist_ok=True)
     os.makedirs(os.path.join("results", run_name), exist_ok=True)
+
+
+def deflection_calc(batch_size, hor_image_size, electron_pointing_pixel):
+    pixel_in_mm = 0.137 
+    deflection_MeV = torch.zeros((batch_size, hor_image_size))
+    deflection_mm = torch.zeros((batch_size, hor_image_size))
+    mat = scipy.io.loadmat('Deflection_curve_Mixture_Feb28.mat')
+    for i in range(hor_image_size):
+        if i <= electron_pointing_pixel:
+            deflection_mm[:, i] = 0
+        else:
+            deflection_mm[:, i] = (i - electron_pointing_pixel) * pixel_in_mm
+            
+    for i in range(electron_pointing_pixel, hor_image_size):
+        xq = deflection_mm[:, i]
+        mask = xq > 1
+        if mask.any():
+            deflection_MeV[mask, i] = torch.from_numpy(scipy.interpolate.interp1d(mat['deflection_curve_mm'][:, 0],
+                                                           mat['deflection_curve_MeV'][:, 0],
+                                                           kind='linear',
+                                                           assume_sorted=False,
+                                                           bounds_error=False)(xq[mask]).astype(np.float32))
+    return deflection_MeV
+
+
+def calc_spec(image, electron_pointing_pixel, deflection_MeV, image_gain=0, resize=None, noise=False, device='cpu'):
+    if resize:
+        image = f.resize(image, resize, antialias=True)
+    image_gain /= 32
+    if noise:
+        noise = torch.median(torch.stack([image[:, :, int(image.shape[1]*0.9), int(image.shape[2]*0.05)],
+                        image[:, :, int(image.shape[1]*0.9), int(image.shape[2]*0.9)],
+                        image[:, :, int(image.shape[1]*0.1), int(image.shape[2]*0.9)]], dim=0), dim=(1, 2))
+        noise = noise.unsqueeze(1).unsqueeze(2)
+        image[image <= noise] = 0
+    acquisition_time_ms = 10
+    hor_image_size = image.shape[3]
+    batch_size = image.shape[0]
+    horizontal_profile = torch.sum(image, dim=(1, 2))
+    spectrum_in_pixel = torch.zeros((batch_size, hor_image_size))
+    spectrum_in_MeV = torch.zeros((batch_size, hor_image_size))
+            
+    for j in range(electron_pointing_pixel, hor_image_size):
+        spectrum_in_pixel[:, j] = horizontal_profile[:,j]
+        with torch.no_grad():
+            mask = (deflection_MeV[:, j-1] - deflection_MeV[:, j]) != 0
+            spectrum_in_MeV[mask, j] = spectrum_in_pixel[mask, j] / (deflection_MeV[mask, j-1] - deflection_MeV[mask, j])
+            spectrum_in_MeV[~torch.isfinite(spectrum_in_MeV)] = 0
+
+    spectrum_calibrated = (spectrum_in_MeV * 3.706) / (acquisition_time_ms*image_gain) if image_gain else (spectrum_in_MeV * 3.706) / acquisition_time_ms
+    return deflection_MeV, spectrum_calibrated

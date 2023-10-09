@@ -89,10 +89,11 @@ class Diffusion:
         t = torch.linspace(0, 1, self.noise_steps)
         return self.beta_end + 0.5 * (self.beta_start - self.beta_end) * (1 + torch.cos(t * torch.pi))
 
-    def noise_images(self, x, t):
+    def noise_images(self, x, t, eps=None):
         sqrt_alpha_hat = torch.sqrt(self.alpha_hat[t])[:, None, None, None]
         sqrt_one_minus_alpha_hat = torch.sqrt(1 - self.alpha_hat[t])[:, None, None, None]
-        eps = torch.randn_like(x)
+        if eps == None:
+            eps = torch.randn_like(x)
         return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * eps, eps
 
     def sample_timesteps(self, n):
@@ -123,6 +124,14 @@ class Diffusion:
         if resize:
             x = f.resize(x, resize, antialias=True)
         return x
+
+
+class weighted_MSELoss(nn.Module):
+    def __init__ (self):
+        super().__init__ ()
+    def forward (self, input, target, weight):
+        return ((input - target)**2) * weight
+
 
 def train_IHD(args, model=None):
     # dist.init_process_group(backend='nccl', init_method='env://', rank=torch.cuda.device_count(), world_size=1)
@@ -207,17 +216,17 @@ def train(args, model=None):
         optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     else:
         optimizer = optim.AdamW([
-                {"params": model.inc.parameters(), "lr": 1e-2},
-                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-4},
+                {"params": model.inc.parameters(), "lr": 1e-3},
+                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
                 {"params": model.down2.maxpool_conv.parameters(), "lr": 1e-4},
-                {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-4},
+                {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-6},
                 {"params": model.bot1.parameters(), "lr": 1e-6},
                 {"params": model.bot2.parameters(), "lr": 1e-6},
                 {"params": model.bot3.parameters(), "lr": 1e-6},
-                {"params": model.up1.conv.parameters(), "lr": 1e-4},
+                {"params": model.up1.conv.parameters(), "lr": 1e-6},
                 {"params": model.up2.conv.parameters(), "lr": 1e-4},
-                {"params": model.up3.conv.parameters(), "lr": 1e-4},
-                {"params": model.outc.parameters(), "lr": 1e-2},
+                {"params": model.up3.conv.parameters(), "lr": 1e-3},
+                {"params": model.outc.parameters(), "lr": 1e-3},
             ], lr=args.lr,
         )
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
@@ -225,8 +234,9 @@ def train(args, model=None):
     diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps, beta_end=args.beta_end)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
-    ema = EMA(0.8)
+    ema = EMA(0.995)
     ema_model = copy.deepcopy(model).eval().requires_grad_(False).to(device)
+    deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel)
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -241,7 +251,25 @@ def train(args, model=None):
             if np.random.random() < 0.1:
                 settings = None
             predicted_noise = model(x_t, t, settings)
-            loss = mse(noise, predicted_noise)
+            loss1 = mse(noise, predicted_noise)
+
+            pred, _ = diffusion.noise_images(images, t, predicted_noise)
+            _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), args.electron_pointing_pixel, deflection_MeV, resize=args.real_size, device=device)
+            _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), args.electron_pointing_pixel, deflection_MeV, resize=args.real_size, device=device)
+            concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1) # TODO normalizes over batch, would be better image by image
+            max_val = torch.max(concatenated)
+            min_val = torch.min(concatenated)
+            x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
+            pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
+            x_t_spectr_norm = x_t_spectr_norm.to(device)
+            pred_spectr_norm = pred_spectr_norm.to(device)
+            loss2 = mse(x_t_spectr_norm, pred_spectr_norm)
+            loss2.requires_grad = True # TODO why is this necessary? Without it it doesnt have a grad_fn which feels wrong
+            # print(loss1)
+            # print(loss2)
+
+            loss = loss1 + loss2
+            # print(loss)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -272,23 +300,25 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "classic_500ep_246lr"
-    args.epochs = 501
+    args.run_name = "spec_ema995"
+    args.epochs = 301
     args.noise_steps = 700
     args.beta_end = 0.02
     args.batch_size = 8
     args.image_height = 64
     args.image_width = 128
+    args.real_size = (256, 512)
     args.features = ["E","P","ms"]
     args.dataset_path = r"with_gain"
     args.csv_path = "params.csv"
-    args.device = "cuda:1"
-    args.lr = 1e-2
+    args.device = "cuda:3"
+    args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
     args.sample_freq = 10
     args.sample_settings = [13.,15.,20.]
     args.sample_size = 8
+    args.electron_pointing_pixel = 62
 
     model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
     ckpt = torch.load("models/transfered.pt", map_location=args.device)
