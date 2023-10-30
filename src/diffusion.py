@@ -267,8 +267,8 @@ class SpacedDiffusion(GaussianDiffusion):
                 new_betas.append(1 - alpha_hat / last_alpha_hat)
                 last_alpha_hat = alpha_hat
                 self.timestep_map.append(i)
-        
         betas = torch.Tensor(new_betas)
+        noise_steps = len(self.timestep_map)
         super().__init__(betas, noise_steps, img_height, img_width, device)
     
     def _wrap_model(self, model):
@@ -276,9 +276,9 @@ class SpacedDiffusion(GaussianDiffusion):
             return model
         return _WrappedModel(model, self.timestep_map, self.rescale_timesteps, self.original_num_steps)
     
-    # def p_mean_variance(self, model, *args, **kwargs):  # pylint: disable=signature-differs
-    #     return super().p_mean_variance(self._wrap_model(model), *args,
-    #                                    **kwargs)
+    def p_mean_variance(self, model, *args, **kwargs):  # pylint: disable=signature-differs
+        return super().p_mean_variance(self._wrap_model(model), *args,
+                                       **kwargs)
 
 
 class _WrappedModel:
@@ -290,20 +290,18 @@ class _WrappedModel:
         self.timestep_map = timestep_map
         self.rescale_timesteps = rescale_timesteps
         self.original_num_steps = original_num_steps
-
     def forward(self, x, t, y):
         """
         Args:
             t: t's with differrent ranges (can be << T due to smaller eval T) need to be converted to the original t's
         """
         map_tensor = torch.tensor(self.timestep_map, device=t.device, dtype=t.dtype)
-        print(t)
+
         def do(t):
             new_ts = map_tensor[t]
             if self.rescale_timesteps:
                 new_ts = new_ts.float() * (1000.0 / self.original_num_steps)
             return new_ts
-        # print(map_tensor[t])
         return self.model(x, do(t), y)
     
     def __call__(self, x, t, y):
@@ -368,5 +366,4 @@ def space_timesteps(num_timesteps, section_counts):
             cur_idx += frac_stride
         all_steps += taken_steps
         start_idx += size
-    print(all_steps)
     return set(all_steps)
