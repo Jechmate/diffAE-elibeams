@@ -11,6 +11,12 @@ end=22
 # Initialize the sum variable
 sum=0
 
+# Initialize variables for max and min FID values and their corresponding subdirectories
+max_fid=0
+min_fid=1000000
+max_subdir=""
+min_subdir=""
+
 # Loop through the subdirectories
 for ((i=start; i<=end; i++))
 do
@@ -22,9 +28,23 @@ do
     
     # Add the number to the sum
     sum=$(echo "$sum + $fid" | bc -l)
+    
+    # Check if this is a new maximum or minimum FID value and update variables accordingly
+    if (( $(echo "$fid > $max_fid" | bc -l) )); then
+        max_fid=$fid
+        max_subdir="$i"
+    fi
+    
+    if (( $(echo "$fid < $min_fid" | bc -l) )); then
+        min_fid=$fid
+        min_subdir="$i"
+    fi
+    
 done
 
 # Calculate the average
 average=$(echo "$sum / $end" | bc -l)
 
 echo "Average FID: $average"
+echo "Maximum FID: $max_fid (in subdirectory $max_subdir)"
+echo "Minimum FID: $min_fid (in subdirectory $min_subdir)"

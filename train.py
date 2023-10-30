@@ -5,132 +5,16 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from torch import optim
-from utils import *
-from modules import UNet_conditional, EMA
-import torch_dct
+from src.utils import *
+from src.modules import UNet_conditional, EMA
 import logging
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torchsummary import summary
 import torchvision.transforms.functional as f
+from src.diffusion import *
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
-
-
-class DCTBlur(nn.Module): # TODO use pytorch instead of np
-
-    def __init__(self, img_width, img_height, device, noise_steps):
-        super(DCTBlur, self).__init__()
-        self.device = device
-        self.noise_steps = noise_steps
-        freqs_hor = np.pi*torch.linspace(0, img_width-1,img_width).to(device)/img_width
-        freqs_ver = np.pi*torch.linspace(0, img_height-1,img_height).to(device)/img_height
-        self.frequencies_squared = freqs_hor[None, :]**2 + freqs_ver[:, None]**2 # swapped None and :, sizes didnt match
-
-    def sample_timesteps(self, n):
-        return torch.randint(low=1, high=self.noise_steps, size=(n,))
-
-    def prepare_blur_schedule(self, blur_sigma_max, blur_sigma_min):
-        self.blur_schedule = torch.Tensor().to(self.device)
-        self.blur_schedule = np.exp(np.linspace(np.log(blur_sigma_min), np.log(blur_sigma_max), self.noise_steps))
-        self.blur_schedule = torch.Tensor(np.array([0] + list(self.blur_schedule))).to(self.device)  # Add the k=0 timestep
-
-    def forward(self, x, t):
-        sigmas = self.blur_schedule[t][:, None, None, None]
-        t = sigmas**2/2
-        dct_coefs = torch_dct.dct_2d(x, norm='ortho')
-        dct_coefs = dct_coefs * torch.exp(-self.frequencies_squared * t)
-        return torch_dct.idct_2d(dct_coefs, norm='ortho')
-    
-    def get_initial_sample(self, trainloader, device):
-        """Take a draw from the prior p(u_K)"""
-        initial_sample = next(iter(trainloader))['image'].to(device)
-        # original_images = initial_sample.clone()
-        initial_sample = self.forward(initial_sample, (self.noise_steps * torch.ones(initial_sample.shape[0]).long()).to(device))
-        return initial_sample # , original_images
-    
-    def sample(self, trainloader, device, model, delta, settings, cfg_scale=3, resize=None):
-        initial_sample = self.get_initial_sample(trainloader, device)
-        with torch.no_grad():
-            u = initial_sample.to(device).float()
-            for i in tqdm(range(self.noise_steps, 0, -1)):
-                vec_fwd_steps = torch.ones(
-                    initial_sample.shape[0], device=device, dtype=torch.long) * i
-                # Predict less blurry mean
-                u_mean = model(u, vec_fwd_steps, settings) + u
-                if cfg_scale > 0: # TODO this may be bs
-                    uncond_mean = model(u, vec_fwd_steps, None) + u
-                    u_mean = torch.lerp(uncond_mean, u_mean, cfg_scale)
-                # Sampling step
-                noise = torch.randn_like(u)
-                u = u_mean + noise*delta
-            u_mean = (u_mean.clamp(-1, 1) + 1) / 2
-            u_mean = (u_mean * 255).type(torch.uint8)
-            if resize:
-                u_mean = f.resize(u_mean, resize, antialias=True)
-            return u_mean
-
-
-class Diffusion:
-    def __init__(self, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_height=120, img_width=300, device="cuda"):
-        self.noise_steps = noise_steps
-        self.beta_start = beta_start
-        self.beta_end = beta_end
-
-        self.beta = self.prepare_noise_schedule().to(device)
-        self.alpha = 1. - self.beta
-        self.alpha_hat = torch.cumprod(self.alpha, dim=0)
-
-        self.img_height = img_height
-        self.img_width = img_width
-        self.device = device
-
-    def prepare_noise_schedule(self):
-        t = torch.linspace(0, 1, self.noise_steps)
-        return self.beta_end + 0.5 * (self.beta_start - self.beta_end) * (1 + torch.cos(t * torch.pi))
-
-    def noise_images(self, x, t, eps=None):
-        sqrt_alpha_hat = torch.sqrt(self.alpha_hat[t])[:, None, None, None]
-        sqrt_one_minus_alpha_hat = torch.sqrt(1 - self.alpha_hat[t])[:, None, None, None]
-        if eps == None:
-            eps = torch.randn_like(x)
-        return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * eps, eps
-
-    def sample_timesteps(self, n):
-        return torch.randint(low=1, high=self.noise_steps, size=(n,))
-
-    def sample(self, model, n, settings, cfg_scale=3, resize=None):
-        logging.info(f"Sampling {n} new images....")
-        model.eval()
-        with torch.no_grad():
-            x = torch.randn((n, 1, self.img_height, self.img_width)).to(self.device)
-            for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
-                t = (torch.ones(n) * i).long().to(self.device)
-                predicted_noise = model(x, t, settings)
-                if cfg_scale > 0:
-                    uncond_predicted_noise = model(x, t, None)
-                    predicted_noise = torch.lerp(uncond_predicted_noise, predicted_noise, cfg_scale)
-                alpha = self.alpha[t][:, None, None, None]
-                alpha_hat = self.alpha_hat[t][:, None, None, None]
-                beta = self.beta[t][:, None, None, None]
-                if i > 1:
-                    noise = torch.randn_like(x)
-                else:
-                    noise = torch.zeros_like(x)
-                x = 1 / torch.sqrt(alpha) * (x - ((1 - alpha) / (torch.sqrt(1 - alpha_hat))) * predicted_noise) + torch.sqrt(beta) * noise
-        model.train()
-        x = (x.clamp(-1, 1) + 1) / 2
-        x = (x * 255).type(torch.uint8)
-        if resize:
-            x = f.resize(x, resize, antialias=True)
-        return x
-
-
-class weighted_MSELoss(nn.Module):
-    def __init__ (self):
-        super().__init__ ()
-    def forward (self, input, target, weight):
-        return ((input - target)**2) * weight
 
 
 def train_IHD(args, model=None):
@@ -184,7 +68,6 @@ def train_IHD(args, model=None):
             perturbed_data = noise + blurred_batch
             if epoch == 0 and i == 0:
                 summary(model, perturbed_data, t, settings, device=device)
-            #     print("After summary")
             diff = model(perturbed_data, t, settings)
             prediction = perturbed_data + diff
             loss = mse(less_blurred_batch, prediction)
@@ -231,12 +114,12 @@ def train(args, model=None):
         )
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
     mse = nn.MSELoss()
-    diffusion = Diffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps, beta_end=args.beta_end)
+    diffusion = GaussianDiffusionDDPM(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps, beta_end=args.beta_end)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
-    ema = EMA(0.995)
+    ema = EMA(0.9)
     ema_model = copy.deepcopy(model).eval().requires_grad_(False).to(device)
-    deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel)
+    deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -244,6 +127,7 @@ def train(args, model=None):
         for i, data in enumerate(pbar):
             images = data['image'].to(device)
             settings = data['settings'].to(device)
+            acq_time = settings[:, 2]
             t = diffusion.sample_timesteps(images.shape[0]).to(device)
             x_t, noise = diffusion.noise_images(images, t)
             if epoch == 0 and i == 0:
@@ -253,23 +137,36 @@ def train(args, model=None):
             predicted_noise = model(x_t, t, settings)
             loss1 = mse(noise, predicted_noise)
 
-            pred, _ = diffusion.noise_images(images, t, predicted_noise)
-            _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), args.electron_pointing_pixel, deflection_MeV, resize=args.real_size, device=device)
-            _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), args.electron_pointing_pixel, deflection_MeV, resize=args.real_size, device=device)
-            concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1) # TODO normalizes over batch, would be better image by image
-            max_val = torch.max(concatenated)
-            min_val = torch.min(concatenated)
-            x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
-            pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
-            x_t_spectr_norm = x_t_spectr_norm.to(device)
-            pred_spectr_norm = pred_spectr_norm.to(device)
-            loss2 = mse(x_t_spectr_norm, pred_spectr_norm)
-            loss2.requires_grad = True # TODO why is this necessary? Without it it doesnt have a grad_fn which feels wrong
-            # print(loss1)
-            # print(loss2)
-
-            loss = loss1 + loss2
-            # print(loss)
+            if False: # t[0].item() < args.noise_steps*0.1:
+                pred, _ = diffusion.noise_images(images, t, predicted_noise)
+                _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
+                                          args.electron_pointing_pixel, 
+                                          deflection_MeV, 
+                                          acquisition_time_ms=acq_time, 
+                                          resize=args.real_size,
+                                          device=device)
+                _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), 
+                                           args.electron_pointing_pixel, 
+                                           deflection_MeV, 
+                                           acquisition_time_ms=acq_time, 
+                                           resize=args.real_size,
+                                           device=device)
+                concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1) # TODO normalizes over batch, would be better image by image
+                max_val = torch.max(concatenated)
+                min_val = torch.min(concatenated)
+                x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
+                pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
+                x_t_spectr_norm = x_t_spectr_norm.to(device)
+                pred_spectr_norm = pred_spectr_norm.to(device)
+                loss2 = mse(x_t_spectr_norm, pred_spectr_norm) * 10
+                loss2.requires_grad = True # TODO why is this necessary? Without it it doesnt have a grad_fn which feels wrong
+                el_pointing_adjusted = int(args.electron_pointing_pixel/(args.real_size[1]/args.image_width))
+                pred_norm = (pred.clamp(-1, 1) + 1) / 2
+                loss3 = pred_norm[:, :, :, :el_pointing_adjusted].mean(dim=(0, -2, -1))
+                print(f"Basic: {loss1}, 1D: {loss2}, Beam_pos: {loss3}")
+                loss = loss1 + loss2 + loss3
+            else:
+                loss = loss1
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -300,7 +197,7 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "spec_ema995"
+    args.run_name = "basic_1dx10_beampos_2blocks"
     args.epochs = 301
     args.noise_steps = 700
     args.beta_end = 0.02
@@ -321,7 +218,7 @@ def launch():
     args.electron_pointing_pixel = 62
 
     model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
-    ckpt = torch.load("models/transfered.pt", map_location=args.device)
+    ckpt = torch.load("models/transfered_2block.pt", map_location=args.device)
     model.load_state_dict(ckpt)
     train(args, model)
 

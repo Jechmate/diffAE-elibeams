@@ -136,7 +136,7 @@ def crop_by_laser(image, laser_pos):
     return image[laser_pos[1] - 128:laser_pos[1] + 128, laser_pos[0] - 62:laser_pos[0] + 450]
 
 
-def get_1d(image, electron_pointing_pixel, image_gain=0): # image should be 0 - 1 values
+def get_1d(image, acquisition_time_ms, electron_pointing_pixel, image_gain=0): # image should be 0 - 1 values
     image_gain /= 32 # from original script
     # if image_gain:
     #     noise *= image_gain # this part is missing in the original script
@@ -147,15 +147,14 @@ def get_1d(image, electron_pointing_pixel, image_gain=0): # image should be 0 - 
     # noise = np.percentile(image, 70)
     print(noise)
     image[image <= noise] = 0
-    pixel_in_mm = 0.137 
-    acquisition_time_ms = 10
+    pixel_in_mm = 0.137
     hor_image_size = image.shape[1]
     horizontal_profile = np.sum(image, axis=0)
     spectrum_in_pixel = np.zeros(hor_image_size)
     spectrum_in_MeV = np.zeros(hor_image_size)
     deflection_MeV = np.zeros(hor_image_size)
     deflection_mm = np.zeros(hor_image_size)
-    mat = scipy.io.loadmat('Deflection_curve_Mixture_Feb28.mat')
+    mat = scipy.io.loadmat('data/Deflection_curve_Mixture_Feb28.mat')
     for i in range(hor_image_size): # defining the mm in the image, added + 1
         if i <= electron_pointing_pixel:
             deflection_mm[i] = 0

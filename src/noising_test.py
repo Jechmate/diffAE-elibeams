@@ -1,6 +1,6 @@
 import torch
 from torchvision.utils import save_image
-from ddpm_conditional import Diffusion
+from train import Diffusion
 from utils import get_data
 import argparse
 

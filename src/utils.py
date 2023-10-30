@@ -9,13 +9,11 @@ import pandas as pd
 import numpy as np
 import cv2
 import glob
-import dataset
+import src.dataset as dataset
 import scipy
 import torchvision.transforms.functional as f
 
 class ExperimentDataset(Dataset):
-    """Face settings dataset."""
-
     def __init__(self, csv_file="params.csv", root_dir="train", transform=None, features=["E","perc_N","P","gain","ms"], exclude=[]):
         """
         Arguments:
@@ -108,7 +106,7 @@ def plot_images(images):
     plt.show()
     
     
-def plot_average_image_pairs(root_folder, electron_pointing_pixel=62):
+def plot_average_image_pairs(root_folder, acquisition_time_ms, electron_pointing_pixel=62):
     subfolders = sorted([f.path for f in os.scandir(root_folder) if f.is_dir()])
     n = len(subfolders)
     fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
@@ -121,7 +119,7 @@ def plot_average_image_pairs(root_folder, electron_pointing_pixel=62):
                 im = cv2.imread(os.path.join(subfolder, filename), cv2.IMREAD_UNCHANGED)
                 images.append(im)
         avg_im = np.mean(images, axis=0)
-        deflection_MeV, spectrum_calibrated = dataset.get_1d(avg_im/255, electron_pointing_pixel=electron_pointing_pixel)
+        deflection_MeV, spectrum_calibrated = dataset.get_1d(avg_im/255, acquisition_time_ms, electron_pointing_pixel=electron_pointing_pixel)
 
         axs[i, 1].plot(deflection_MeV, spectrum_calibrated)  # plot without fit
         axs[i, 1].set_title('Reconstructed Spectrum')
@@ -133,14 +131,14 @@ def plot_average_image_pairs(root_folder, electron_pointing_pixel=62):
     plt.show()
     
     
-def plot_image_pairs(images, electron_pointing_pixel=62, xlim=[2,20]):
+def plot_image_pairs(images, acquisition_time_ms, electron_pointing_pixel=62, xlim=[2,20]):
     n = len(images)
     fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
     fig.subplots_adjust(hspace=0.35)  # Increase the space between rows
     fig.subplots_adjust(wspace=0.1)  # Decrease the space between columns
     for i in range(n):
         im = images[i].cpu().permute(1, 2, 0).numpy()
-        deflection_MeV, spectrum_calibrated = dataset.get_1d(im/255, electron_pointing_pixel=electron_pointing_pixel)
+        deflection_MeV, spectrum_calibrated = dataset.get_1d(im/255, acquisition_time_ms, electron_pointing_pixel=electron_pointing_pixel)
 
         axs[i, 1].plot(deflection_MeV, spectrum_calibrated)  # plot without fit
         axs[i, 1].set_title('Reconstructed Spectrum')
@@ -191,7 +189,6 @@ def save_images(images, path, **kwargs):
 
 def get_data(args):
     transforms = torchvision.transforms.Compose([
-        # torchvision.transforms.Grayscale(), # TODO hope this doesnt do any funny business with the data
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Resize((args.image_height, args.image_width), antialias=True),  # args.image_size + 1/4 *args.image_size
         torchvision.transforms.Normalize(0.5, 0.5)
@@ -231,7 +228,7 @@ def deflection_calc(batch_size, hor_image_size, electron_pointing_pixel):
     return deflection_MeV
 
 
-def calc_spec(image, electron_pointing_pixel, deflection_MeV, image_gain=0, resize=None, noise=False, device='cpu'):
+def calc_spec(image, electron_pointing_pixel, deflection_MeV, acquisition_time_ms, image_gain=0, resize=None, noise=False, device='cpu'):
     if resize:
         image = f.resize(image, resize, antialias=True)
     image_gain /= 32
@@ -241,12 +238,12 @@ def calc_spec(image, electron_pointing_pixel, deflection_MeV, image_gain=0, resi
                         image[:, :, int(image.shape[1]*0.1), int(image.shape[2]*0.9)]], dim=0), dim=(1, 2))
         noise = noise.unsqueeze(1).unsqueeze(2)
         image[image <= noise] = 0
-    acquisition_time_ms = 10
+    # acquisition_time_ms = 10
     hor_image_size = image.shape[3]
     batch_size = image.shape[0]
-    horizontal_profile = torch.sum(image, dim=(1, 2))
-    spectrum_in_pixel = torch.zeros((batch_size, hor_image_size))
-    spectrum_in_MeV = torch.zeros((batch_size, hor_image_size))
+    horizontal_profile = torch.sum(image, dim=(1, 2)).to(device)
+    spectrum_in_pixel = torch.zeros((batch_size, hor_image_size)).to(device)
+    spectrum_in_MeV = torch.zeros((batch_size, hor_image_size)).to(device)
             
     for j in range(electron_pointing_pixel, hor_image_size):
         spectrum_in_pixel[:, j] = horizontal_profile[:,j]
@@ -255,5 +252,6 @@ def calc_spec(image, electron_pointing_pixel, deflection_MeV, image_gain=0, resi
             spectrum_in_MeV[mask, j] = spectrum_in_pixel[mask, j] / (deflection_MeV[mask, j-1] - deflection_MeV[mask, j])
             spectrum_in_MeV[~torch.isfinite(spectrum_in_MeV)] = 0
 
+    acquisition_time_ms = acquisition_time_ms.reshape(batch_size, 1).repeat(1, hor_image_size).to(device)
     spectrum_calibrated = (spectrum_in_MeV * 3.706) / (acquisition_time_ms*image_gain) if image_gain else (spectrum_in_MeV * 3.706) / acquisition_time_ms
     return deflection_MeV, spectrum_calibrated
