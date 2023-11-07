@@ -2,6 +2,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from dataclasses import dataclass
+from enum import Enum
+from typing import NamedTuple, Tuple
 
 
 class EMA:
@@ -153,8 +156,12 @@ class UNet_conditional(nn.Module):
         self.sa5 = SelfAttention(64, img_height//2, img_width//2)
         self.up3 = Up(128, 64)
         self.sa6 = SelfAttention(64, img_height, img_width)
-        # self.outc = nn.Conv2d(64, c_out, kernel_size=3, padding=1)
-        self.outc = nn.Conv2d(64, c_out, kernel_size=1)
+        # self.outc = nn.Conv2d(64, c_out, kernel_size=1)
+        self.outc = nn.Sequential(
+                nn.GroupNorm(1, 64),
+                nn.SiLU(),
+                nn.Conv2d(64, 1, kernel_size=3, padding=1) # originally this conv is zeroed
+            )
 
         self.label_prep = nn.Sequential(
             nn.BatchNorm1d(feat_num), # TODO this might be a bad idea if the batchsize is small (which it is)
@@ -167,6 +174,7 @@ class UNet_conditional(nn.Module):
             10000
             ** (torch.arange(0, channels, 2, device=self.device).float() / channels)
         ).to(self.device)
+        t = t.to(self.device)
         pos_enc_a = torch.sin(t.repeat(1, channels // 2) * inv_freq)
         pos_enc_b = torch.cos(t.repeat(1, channels // 2) * inv_freq)
         pos_enc = torch.cat([pos_enc_a, pos_enc_b], dim=-1)
@@ -202,8 +210,8 @@ class UNet_conditional(nn.Module):
         return output
 
 
-class Encoder(nn.Module):
-    def __init__(self, c_in=1, c_out=1, time_dim=256, device="cuda", img_width=256, img_height=128, feat_num=5):
+class SemEncoder(nn.Module):
+    def __init__(self, c_in=1, time_dim=256, device="cuda", img_width=256, img_height=128, feat_num=5, latent_dim=128):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
@@ -214,7 +222,13 @@ class Encoder(nn.Module):
         self.sa2 = SelfAttention(256, img_height//4, img_width//4)
         self.down3 = Down(256, 256)
         self.sa3 = SelfAttention(256, img_height//8, img_width//8)
-        self.outc = nn.Conv2d(256, c_out, kernel_size=1)
+        self.out = nn.Sequential(
+                nn.GroupNorm(1, 256),
+                nn.SiLU(),
+                nn.AdaptiveAvgPool2d((1, 1)),
+                nn.Conv2d(256, latent_dim, kernel_size=1),
+                nn.Flatten(),
+            )
 
         self.label_prep = nn.Sequential(
             nn.BatchNorm1d(feat_num),
@@ -232,10 +246,176 @@ class Encoder(nn.Module):
         x3 = self.sa2(x3)
         x4 = self.down3(x3, y)
         x4 = self.sa3(x4)
-        output = self.outc(x4)
+        # x5 = self.down4(x4, y)
+        # x5 = self.sa4(x5)
+        output = self.out(x4)
         return output
 
 
-class Latent_net(nn.Module):
-    def __init__(self, time_dim=256, device="cuda", feat_num=5):
-        pass
+# Taken directly from diffAE paper
+class MLPSkipNet(nn.Module):
+    """
+    concat x to hidden layers
+
+    default MLP for the latent DPM in the paper!
+    """
+    def __init__(self, feat_num=3, device='cuda'):
+        super().__init__()
+        self.num_channels = 128 # latent_dim
+        self.num_time_emb_channels = 32
+        self.num_time_layers = 2
+        self.time_last_act = False
+        self.num_layers = 20
+        self.num_hid_channels = 1024
+        self.use_norm = False
+        self.dropout = 0
+        self.skip_layers = [] # skip should be added everywhere according to the paper but nowhere according to config
+        self.condition_bias = 0
+        self.device = device
+
+        self.label_prep = nn.Sequential(
+            nn.BatchNorm1d(feat_num),
+            nn.Linear(feat_num, self.num_channels),
+            nn.SiLU(),
+        ).to(device)
+
+        layers = []
+        for i in range(self.num_time_layers):
+            if i == 0:
+                a = self.num_time_emb_channels
+                b = self.num_channels
+            else:
+                a = self.num_channels
+                b = self.num_channels
+            layers.append(nn.Linear(a, b))
+            if i < self.num_time_layers - 1 or self.time_last_act:
+                layers.append(nn.SiLU())
+        self.time_embed = nn.Sequential(*layers).to(device)
+
+        self.layers = nn.ModuleList([])
+        for i in range(self.num_layers):
+            if i == 0:
+                act = nn.SiLU()
+                norm = self.use_norm
+                cond = True
+                a, b = self.num_channels, self.num_hid_channels
+                dropout = self.dropout
+            elif i == self.num_layers - 1:
+                act = nn.Identity()
+                norm = False
+                cond = False
+                a, b = self.num_hid_channels, self.num_channels
+                dropout = 0
+            else:
+                act = nn.SiLU()
+                norm = self.use_norm
+                cond = True
+                a, b = self.num_hid_channels, self.num_hid_channels
+                dropout = self.dropout
+
+            if i in self.skip_layers:
+                a += self.num_channels
+
+            self.layers.append(
+                MLPLNAct(
+                    a,
+                    b,
+                    norm=norm,
+                    activation=act,
+                    cond_channels=self.num_channels,
+                    use_cond=cond,
+                    condition_bias=self.condition_bias,
+                    dropout=dropout,
+                    device=self.device
+                ))
+        self.last_act = nn.Identity()
+
+    def forward(self, x, t, y):
+        t = t.unsqueeze(-1).type(torch.float)
+        t = self.pos_encoding(t, self.num_time_emb_channels)
+        cond = self.time_embed(t)
+        y = self.label_prep(y).squeeze()
+        cond += y
+        h = x
+        for i in range(len(self.layers)):
+            if i in self.skip_layers:
+                # injecting input into the hidden layers
+                # print("h shape:", h.shape)
+                # print("x shape:", x.shape)
+                # h = torch.cat([h, x], dim=1)
+                pass # Do they use the skip connections or not? according to paper yes, according to code no
+            h = self.layers[i].forward(x=h, cond=cond)
+        h = self.last_act(h)
+        return h
+    
+    def pos_encoding(self, t, channels):
+        inv_freq = 1.0 / (
+            10000
+            ** (torch.arange(0, channels, 2, device=self.device).float() / channels)
+        ).to(self.device)
+        pos_enc_a = torch.sin(t.repeat(1, channels // 2) * inv_freq)
+        pos_enc_b = torch.cos(t.repeat(1, channels // 2) * inv_freq)
+        pos_enc = torch.cat([pos_enc_a, pos_enc_b], dim=-1)
+        return pos_enc
+
+
+class MLPLNAct(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        norm: bool,
+        activation,
+        use_cond: bool,
+        cond_channels: int,
+        condition_bias: float = 0,
+        dropout: float = 0,
+        device = 'cuda'
+    ):
+        super().__init__()
+        self.condition_bias = condition_bias
+        self.use_cond = use_cond
+
+        self.linear = nn.Linear(in_channels, out_channels).to(device)
+        self.act = activation.to(device)
+        if self.use_cond:
+            self.linear_emb = nn.Linear(cond_channels, out_channels).to(device)
+            self.cond_layers = nn.Sequential(self.act, self.linear_emb).to(device)
+        if norm:
+            self.norm = nn.LayerNorm(out_channels).to(device)
+        else:
+            self.norm = nn.Identity().to(device)
+
+        if dropout > 0:
+            self.dropout = nn.Dropout(p=dropout).to(device)
+        else:
+            self.dropout = nn.Identity().to(device)
+
+        self.init_weights()
+
+    def init_weights(self):
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.kaiming_normal_(module.weight,
+                                         a=0,
+                                         nonlinearity='relu')
+
+    def forward(self, x, cond=None):
+        x = self.linear(x)
+        if self.use_cond:
+            # (n, c) or (n, c * 2)
+            cond = self.cond_layers(cond)
+            cond = (cond, None)
+
+            # scale shift first
+            x = x * (self.condition_bias + cond[0])
+            if cond[1] is not None:
+                x = x + cond[1]
+            # then norm
+            x = self.norm(x)
+        else:
+            # no condition
+            x = self.norm(x)
+        x = self.act(x)
+        x = self.dropout(x)
+        return x
