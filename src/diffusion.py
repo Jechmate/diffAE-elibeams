@@ -51,7 +51,7 @@ class GaussianDiffusion:
         return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * eps, eps
 
     def sample_timesteps(self, n):
-        return torch.randint(low=1, high=self.noise_steps, size=(1,)).expand(n) # TODO revert to random t per image in batch and use mask when accessing t in batches
+        return torch.randint(low=1, high=self.noise_steps, size=(n,)) # TODO revert to random t per image in batch and use mask when accessing t in batches
 
     def sample_ddpm(self, model, n, settings, cfg_scale=3, resize=None):
         logging.info(f"Sampling {n} new images....")
@@ -61,9 +61,6 @@ class GaussianDiffusion:
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = model(x, t, settings)
-                if cfg_scale > 0:
-                    uncond_predicted_noise = model(x, t, None)
-                    predicted_noise = torch.lerp(uncond_predicted_noise, predicted_noise, cfg_scale)
                 alpha = self.alpha[t][:, None, None, None]
                 alpha_hat = self.alpha_hat[t][:, None, None, None]
                 beta = self.beta[t][:, None, None, None]
@@ -171,9 +168,9 @@ class GaussianDiffusion:
                     - 'pred_xstart': the prediction for x_0.
         """
         model_output = model.forward(x, t, y)
-        if cfg_scale > 0:
-            uncond_model_output = model(x, t, None)
-            model_output = torch.lerp(uncond_model_output, model_output, cfg_scale)
+        # if cfg_scale > 0:
+        #     uncond_model_output = model(x, t, None)
+        #     model_output = torch.lerp(uncond_model_output, model_output, cfg_scale)
         if vartype == "fixed_large": 
             # print(self.posterior_variance[1])
             model_variance = torch.cat((self.posterior_variance[1].reshape(1), self.beta[1:]), dim=0)
@@ -213,18 +210,18 @@ class GaussianDiffusion:
         posterior_log_variance_clipped = self.posterior_log_variance_clipped[t][:, None, None, None]
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
     
-    def encode_stochastic(self, model, x, cond, eta=0.0, device='cuda'):
-        out = self.ddim_reverse_sample_loop(model, x, cond, eta, device)
+    def encode_stochastic(self, model, x, cond, eta=0.0):
+        out = self.ddim_reverse_sample_loop(model, x, cond, eta)
         return out['sample']
     
-    def ddim_reverse_sample_loop(self, model, x, cond, eta=0.0, device='cuda'):
+    def ddim_reverse_sample_loop(self, model, x, cond, eta=0.0):
         sample_t = []
         xstart_t = []
         T = []
         indices = list(range(self.noise_steps))
         sample = x
-        for i in indices:
-            t = torch.tensor([i] * len(sample), device=device)
+        for i in tqdm(indices):
+            t = torch.tensor([i] * len(sample), device=self.device)
             with torch.no_grad():
                 out = self.ddim_reverse_sample(model,
                                                sample,
@@ -254,7 +251,7 @@ class GaussianDiffusion:
         """
         Sample x_{t+1} from the model using DDIM reverse ODE.
         """
-        out = self.p_mean_variance(model, x, t, y=cond,)
+        out = self.p_mean_variance(model, x, t.to(self.device), y=cond)
         # Usually our model outputs epsilon, but we re-derive it
         # in case we used x_start or x_prev prediction.
         eps = (self.sqrt_recip_alpha_hat[t][:, None, None, None] * x - out["pred_xstart"]) / self.sqrt_recipm1_alpha_hat[t][:, None, None, None]

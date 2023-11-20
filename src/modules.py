@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from dataclasses import dataclass
 from enum import Enum
 from typing import NamedTuple, Tuple
+import math
 
 
 class EMA:
@@ -59,6 +60,27 @@ class SelfAttention(nn.Module):
         return attention_value.swapaxes(2, 1).view(-1, self.channels, self.height, self.width)
 
 
+def pos_encoding(timesteps, dim, max_period=10000):
+        """
+        Create sinusoidal timestep embeddings.
+
+        :param timesteps: a 1-D Tensor of N indices, one per batch element.
+                        These may be fractional.
+        :param dim: the dimension of the output.
+        :param max_period: controls the minimum frequency of the embeddings.
+        :return: an [N x dim] Tensor of positional embeddings.
+        """
+        half = dim // 2
+        freqs = torch.exp(-math.log(max_period) *
+                    torch.arange(start=0, end=half, dtype=torch.float32) /
+                    half).to(device=timesteps.device)
+        args = timesteps[:, None].float() * freqs[None]
+        embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+        if dim % 2:
+            embedding = torch.cat(
+                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+        return embedding
+
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None, residual=False):
         super().__init__()
@@ -83,6 +105,7 @@ class DoubleConv(nn.Module):
 class Down(nn.Module):
     def __init__(self, in_channels, out_channels, emb_dim=256):
         super().__init__()
+        self.in_channels = in_channels
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2),
             DoubleConv(in_channels, in_channels, residual=True),
@@ -90,47 +113,132 @@ class Down(nn.Module):
             # nn.Dropout(p=0.2),
         )
 
-        self.emb_layer = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(
-                emb_dim,
-                out_channels
-            ),
-            # nn.Dropout(p=0.2),
-        )
+        self.emb_layers = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(emb_dim, 2 * in_channels),
+            )
+        self.cond_emb_layers = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(emb_dim, in_channels),
+            )
+    
+    def scale_shift(self, x, emb, cond, scale_bias=1):
+        if emb is not None:
+            while len(emb.shape) < len(x.shape):
+                emb = emb[..., None]
+        while len(cond.shape) < len(x.shape):
+            cond = cond[..., None]
+        scale_shifts = [emb, cond]
 
-    def forward(self, x, t):
-        x = self.maxpool_conv(x)
-        emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])
-        return x + emb
+        for i, each in enumerate(scale_shifts):
+            if each is None:
+                a = None
+                b = None
+            else:
+                if each.shape[1] == self.in_channels * 2:
+                    a, b = torch.chunk(each, 2, dim=1)
+                else:
+                    a = each
+                    b = None
+            scale_shifts[i] = (a, b)
+
+        biases = [scale_bias] * len(scale_shifts)
+        x = self.maxpool_conv[0](x)
+        for i, (scale, shift) in enumerate(scale_shifts):
+            if scale is not None:
+                x = x * (biases[i] + scale)
+                if shift is not None:
+                    x = x + shift
+        x = self.maxpool_conv[1:](x)
+        return x
+
+    def forward(self, x, t, cond):
+        if t is not None:
+            emb_out = self.emb_layers(t)
+        else:
+            emb_out = None
+        if cond is not None:
+            cond_out = self.cond_emb_layers(cond)
+        else:
+            cond_out = None
+        if cond_out is not None:
+                    while len(cond_out.shape) < len(x.shape):
+                        cond_out = cond_out[..., None]
+        x = self.scale_shift(x, emb=emb_out, cond=cond_out)
+        return x
 
 
 class Up(nn.Module):
     def __init__(self, in_channels, out_channels, emb_dim=256):
         super().__init__()
-
+        self.in_channels = in_channels
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
         self.conv = nn.Sequential(
             DoubleConv(in_channels, in_channels, residual=True),
-            DoubleConv(in_channels, out_channels, in_channels // 2),
-            # nn.Dropout(p=0.2),
+            DoubleConv(in_channels, out_channels, in_channels // 2)
         )
 
-        self.emb_layer = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(
-                emb_dim,
-                out_channels
-            ),
-            # nn.Dropout(p=0.2),
-        )
+        self.emb_layers = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(emb_dim, 2 * out_channels),
+            )
+        self.cond_emb_layers = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(emb_dim, 2 * out_channels), # TODO why is this x2 necessary?
+            )
 
-    def forward(self, x, skip_x, t):
+        self.skip_connection = nn.Conv2d(
+                                    in_channels,
+                                    out_channels,
+                                    1,
+                                    padding=0)
+
+    def scale_shift(self, x, emb, cond, scale_bias=1):
+        if emb is not None:
+            while len(emb.shape) < len(x.shape):
+                emb = emb[..., None]
+        while len(cond.shape) < len(x.shape):
+            cond = cond[..., None]
+        scale_shifts = [emb, cond]
+
+        for i, each in enumerate(scale_shifts):
+            if each is None:
+                a = None
+                b = None
+            else:
+                if each.shape[1] == self.in_channels * 2:
+                    a, b = torch.chunk(each, 2, dim=1)
+                else:
+                    a = each
+                    b = None
+            scale_shifts[i] = (a, b)
+
+        biases = [scale_bias] * len(scale_shifts)
+        x = self.conv[0](x)
+        for i, (scale, shift) in enumerate(scale_shifts):
+            if scale is not None:
+                x = x * (biases[i] + scale)
+                if shift is not None:
+                    x = x + shift
+        x = self.conv[1](x)
+        return x
+
+    def forward(self, x, skip_x, t, cond):
+        h = self.skip_connection(skip_x)
         x = self.up(x)
-        x = torch.cat([skip_x, x], dim=1)
-        x = self.conv(x)
-        emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])
-        return x + emb
+        if t is not None:
+            emb_out = self.emb_layers(t)
+        else:
+            emb_out = None
+        if cond is not None:
+            cond_out = self.cond_emb_layers(cond)
+        else:
+            cond_out = None
+        if cond_out is not None:
+                    while len(cond_out.shape) < len(x.shape):
+                        cond_out = cond_out[..., None]
+        x = self.scale_shift(x, emb=emb_out, cond=cond_out)
+        return h + x
 
 
 class UNet_conditional(nn.Module):
@@ -138,10 +246,11 @@ class UNet_conditional(nn.Module):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
+        self.cond_dim = feat_num
         self.inc = DoubleConv(c_in, 64)
-        self.down1 = Down(64, 128)
+        self.down1 = Down(64, 128, emb_dim=time_dim)
         self.sa1 = SelfAttention(128, img_height//2, img_width//2)
-        self.down2 = Down(128, 256)
+        self.down2 = Down(128, 256, emb_dim=time_dim)
         self.sa2 = SelfAttention(256, img_height//4, img_width//4)
         self.down3 = Down(256, 256)
         self.sa3 = SelfAttention(256, img_height//8, img_width//8)
@@ -150,61 +259,50 @@ class UNet_conditional(nn.Module):
         self.bot2 = DoubleConv(512, 512)
         self.bot3 = DoubleConv(512, 256)
 
-        self.up1 = Up(512, 128)
+        self.up1 = Up(256, 128, emb_dim=time_dim)
         self.sa4 = SelfAttention(128, img_height//4, img_width//4)
-        self.up2 = Up(256, 64)
+        self.up2 = Up(128, 64, emb_dim=time_dim)
         self.sa5 = SelfAttention(64, img_height//2, img_width//2)
-        self.up3 = Up(128, 64)
+        self.up3 = Up(64, 64, emb_dim=time_dim)
         self.sa6 = SelfAttention(64, img_height, img_width)
-        # self.outc = nn.Conv2d(64, c_out, kernel_size=1)
-        self.outc = nn.Sequential(
-                nn.GroupNorm(1, 64),
-                nn.SiLU(),
-                nn.Conv2d(64, 1, kernel_size=3, padding=1) # originally this conv is zeroed
-            )
+        self.outc = nn.Conv2d(64, c_out, kernel_size=1)
 
-        self.label_prep = nn.Sequential(
-            nn.BatchNorm1d(feat_num), # TODO this might be a bad idea if the batchsize is small (which it is)
-            nn.Linear(feat_num, time_dim),
-            nn.SiLU(),
+        self.time_embed = TimeStyleSeperateEmbed(
+            time_channels=64,
+            time_out_channels=self.time_dim,
         )
 
-    def pos_encoding(self, t, channels):
-        inv_freq = 1.0 / (
-            10000
-            ** (torch.arange(0, channels, 2, device=self.device).float() / channels)
-        ).to(self.device)
-        t = t.to(self.device)
-        pos_enc_a = torch.sin(t.repeat(1, channels // 2) * inv_freq)
-        pos_enc_b = torch.cos(t.repeat(1, channels // 2) * inv_freq)
-        pos_enc = torch.cat([pos_enc_a, pos_enc_b], dim=-1)
-        return pos_enc
-
-    def forward(self, x, t, y):
-        t = t.unsqueeze(-1).type(torch.float)
-        t = self.pos_encoding(t, self.time_dim)
-
-        if y is not None:
-            y = self.label_prep(y).squeeze()
-            t += y
-
+    def forward(self, x, t, y, t_cond=None):
+        if t_cond is None:
+            t_cond = t
+        if t is not None:
+            _t_emb = pos_encoding(t, 64)
+            _t_cond_emb = pos_encoding(t_cond, 64)
+        res = self.time_embed.forward(
+                time_emb=_t_emb,
+                cond=y,
+                time_cond_emb=_t_cond_emb,
+            )
+        t = res.time_emb
+        y = res.emb
+        
         x1 = self.inc(x)
-        x2 = self.down1(x1, t)
+        x2 = self.down1(x1, t, y)
         x2 = self.sa1(x2)
-        x3 = self.down2(x2, t)
+        x3 = self.down2(x2, t, y)
         x3 = self.sa2(x3)
-        x4 = self.down3(x3, t)
+        x4 = self.down3(x3, t, y)
         x4 = self.sa3(x4)
 
         x4 = self.bot1(x4)
         x4 = self.bot2(x4)
         x4 = self.bot3(x4)
 
-        x = self.up1(x4, x3, t)
+        x = self.up1(x4, x3, t, y)
         x = self.sa4(x)
-        x = self.up2(x, x2, t)
+        x = self.up2(x, x2, t, y)
         x = self.sa5(x)
-        x = self.up3(x, x1, t)
+        x = self.up3(x, x1, t, y)
         x = self.sa6(x)
         output = self.outc(x)
         return output
@@ -215,40 +313,46 @@ class SemEncoder(nn.Module):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
+        self.latent_dim = latent_dim
         self.inc = DoubleConv(c_in, 64)
-        self.down1 = Down(64, 128)
+        self.down1 = Down(64, 128, emb_dim=time_dim)
         self.sa1 = SelfAttention(128, img_height//2, img_width//2)
-        self.down2 = Down(128, 256)
+        self.down2 = Down(128, 256, emb_dim=time_dim)
         self.sa2 = SelfAttention(256, img_height//4, img_width//4)
-        self.down3 = Down(256, 256)
-        self.sa3 = SelfAttention(256, img_height//8, img_width//8)
+        self.down3 = Down(256, 512, emb_dim=time_dim)
+        self.sa3 = SelfAttention(512, img_height//8, img_width//8)
+        self.down4 = Down(512, 512, emb_dim=time_dim)
+        self.sa4 = SelfAttention(512, img_height//16, img_width//16)
         self.out = nn.Sequential(
-                nn.GroupNorm(1, 256),
+                nn.GroupNorm(1, 512),
                 nn.SiLU(),
                 nn.AdaptiveAvgPool2d((1, 1)),
-                nn.Conv2d(256, latent_dim, kernel_size=1),
+                nn.Conv2d(512, latent_dim, kernel_size=1),
                 nn.Flatten(),
             )
-
-        self.label_prep = nn.Sequential(
-            nn.BatchNorm1d(feat_num),
-            nn.Linear(feat_num, time_dim),
-            nn.SiLU(),
+        self.time_embed = TimeStyleSeperateEmbed(
+            time_channels=feat_num,
+            time_out_channels=self.time_dim,
         )
     
+
     def forward(self, x, y):
-        if y is not None:
-            y = self.label_prep(y).squeeze()
+        res = self.time_embed.forward(
+                time_emb=y,
+                cond=None,
+                time_cond_emb=None,
+            )
+        y = res.time_emb
         x1 = self.inc(x)
-        x2 = self.down1(x1, y)
+        x2 = self.down1(x1, None, y)
         x2 = self.sa1(x2)
-        x3 = self.down2(x2, y)
+        x3 = self.down2(x2, None, y)
         x3 = self.sa2(x3)
-        x4 = self.down3(x3, y)
+        x4 = self.down3(x3, None, y)
         x4 = self.sa3(x4)
-        # x5 = self.down4(x4, y)
-        # x5 = self.sa4(x5)
-        output = self.out(x4)
+        x5 = self.down4(x4, None, y)
+        x5 = self.sa4(x5)
+        output = self.out(x5)
         return output
 
 
@@ -340,8 +444,6 @@ class MLPSkipNet(nn.Module):
         for i in range(len(self.layers)):
             if i in self.skip_layers:
                 # injecting input into the hidden layers
-                # print("h shape:", h.shape)
-                # print("x shape:", x.shape)
                 # h = torch.cat([h, x], dim=1)
                 pass # Do they use the skip connections or not? according to paper yes, according to code no
             h = self.layers[i].forward(x=h, cond=cond)
@@ -419,3 +521,33 @@ class MLPLNAct(nn.Module):
         x = self.act(x)
         x = self.dropout(x)
         return x
+
+
+class EmbedReturn(NamedTuple):
+    # style and time
+    emb: torch.Tensor = None
+    # time only
+    time_emb: torch.Tensor = None
+    # style only (but could depend on time)
+    style: torch.Tensor = None
+
+
+class TimeStyleSeperateEmbed(nn.Module):
+    # embed only style
+    def __init__(self, time_channels, time_out_channels):
+        super().__init__()
+        self.time_embed = nn.Sequential(
+            nn.Linear(time_channels, time_out_channels),
+            nn.SiLU(),
+            nn.Linear(time_out_channels, time_out_channels),
+        )
+        self.style = nn.Identity()
+
+    def forward(self, time_emb=None, cond=None, **kwargs):
+        if time_emb is None:
+            # happens with autoenc training mode
+            time_emb = None
+        else:
+            time_emb = self.time_embed(time_emb)
+        style = self.style(cond)
+        return EmbedReturn(emb=style, time_emb=time_emb, style=style)

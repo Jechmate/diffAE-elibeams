@@ -180,18 +180,19 @@ def train_AE(args, model_stoch=None, model_sem=None):
                 {"params": model_stoch.inc.parameters(), "lr": 1e-3},
                 {"params": model_stoch.down1.maxpool_conv.parameters(), "lr": 1e-3},
                 {"params": model_stoch.down2.maxpool_conv.parameters(), "lr": 1e-4},
-                {"params": model_stoch.down3.maxpool_conv.parameters(), "lr": 1e-6},
-                {"params": model_stoch.bot1.parameters(), "lr": 1e-6},
-                {"params": model_stoch.bot2.parameters(), "lr": 1e-6},
-                {"params": model_stoch.bot3.parameters(), "lr": 1e-6},
-                {"params": model_stoch.up1.conv.parameters(), "lr": 1e-6},
+                {"params": model_stoch.down3.maxpool_conv.parameters(), "lr": 1e-4},
+                {"params": model_stoch.bot1.parameters(), "lr": 1e-5},
+                {"params": model_stoch.bot2.parameters(), "lr": 1e-5},
+                {"params": model_stoch.bot3.parameters(), "lr": 1e-5},
+                {"params": model_stoch.up1.conv.parameters(), "lr": 1e-4},
                 {"params": model_stoch.up2.conv.parameters(), "lr": 1e-4},
                 {"params": model_stoch.up3.conv.parameters(), "lr": 1e-3},
                 {"params": model_stoch.outc.parameters(), "lr": 1e-3},
                 {"params": model_sem.inc.parameters(), "lr": 1e-3},
                 {"params": model_sem.down1.maxpool_conv.parameters(), "lr": 1e-3},
                 {"params": model_sem.down2.maxpool_conv.parameters(), "lr": 1e-4},
-                {"params": model_sem.down3.maxpool_conv.parameters(), "lr": 1e-6}
+                {"params": model_sem.down3.maxpool_conv.parameters(), "lr": 1e-4},
+                {"params": model_sem.down4.maxpool_conv.parameters(), "lr": 1e-5}
             ], lr=args.lr, # TODO does this work the way I hope or does it exclude any parameters that I didnt list here?
         )
     
@@ -200,11 +201,13 @@ def train_AE(args, model_stoch=None, model_sem=None):
     diffusion = SpacedDiffusion(img_height=args.image_height, img_width=args.image_width, device=device, noise_steps=args.noise_steps, beta_start=args.beta_start, beta_end=args.beta_end, section_counts=[20])
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
-    ema_stoch = EMA(0.9)
-    ema_sem = EMA(0.9)
+    ema_stoch = EMA(0.95)
+    ema_sem = EMA(0.95)
     ema_model_stoch = copy.deepcopy(model_stoch).eval().requires_grad_(False).to(device)
     ema_model_sem = copy.deepcopy(model_sem).eval().requires_grad_(False).to(device)
-    # deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
+    deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
+
+    accumulated_loss = 0
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -212,31 +215,59 @@ def train_AE(args, model_stoch=None, model_sem=None):
         for i, data in enumerate(pbar):
             images = data['image'].to(device)
             settings = data['settings'].to(device)
-            # acq_time = settings[:, 2]
+            acq_time = settings[:, 2]
             t = diffusion.sample_timesteps(images.shape[0]).to(device)
             x_t, noise = diffusion.noise_images(images, t)
             sem_vec = model_sem(images, settings)
             predicted_noise = model_stoch(x_t, t, sem_vec)
             loss1 = mse(noise, predicted_noise)
-            loss = loss1
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            ema_stoch.step_ema(ema_model_stoch, model_stoch)
-            ema_sem.step_ema(ema_model_sem, model_sem)
-            scheduler.step()
-            # if (i+1) % gradient_acc == 0:
+            # _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
+            #                             args.electron_pointing_pixel, 
+            #                             deflection_MeV, 
+            #                             acquisition_time_ms=acq_time, 
+            #                             resize=args.real_size,
+            #                             device=device)
+            # _, pred_spectr = calc_spec(((predicted_noise.clamp(-1, 1) + 1) / 2).to(device), 
+            #                             args.electron_pointing_pixel, 
+            #                             deflection_MeV, 
+            #                             acquisition_time_ms=acq_time, 
+            #                             resize=args.real_size,
+            #                             device=device)
+            # concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1) # TODO normalizes over batch, would be better image by image
+            # max_val = torch.max(concatenated)
+            # min_val = torch.min(concatenated)
+            # x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
+            # pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
+            # x_t_spectr_norm = x_t_spectr_norm.to(device)
+            # pred_spectr_norm = pred_spectr_norm.to(device)
+            # loss2 = mse(x_t_spectr_norm, pred_spectr_norm) * 10
+            # loss2.requires_grad = True # TODO why is this necessary? Without it it doesnt have a grad_fn which feels wrong
+            # el_pointing_adjusted = int(args.electron_pointing_pixel/(args.real_size[1]/args.image_width))
+            # pred_norm = (predicted_noise.clamp(-1, 1) + 1) / 2
+            # loss3 = pred_norm[:, :, :, :el_pointing_adjusted].mean(dim=(0, -2, -1))
+            loss = (loss1) / gradient_acc
+            # loss = loss / gradient_acc  # Normalize the loss because PyTorch accumulates gradients
+            loss.backward()  # Backpropagate the gradients
+            accumulated_loss += loss.item()
 
-            pbar.set_postfix(MSE=loss.item())
-            logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+            if (i+1) % gradient_acc == 0:  # Only update every `gradient_acc` mini-batches
+                optimizer.step()  # Perform the optimization step
+                optimizer.zero_grad()  # Reset the gradients to zero
+                ema_stoch.step_ema(ema_model_stoch, model_stoch)
+                ema_sem.step_ema(ema_model_sem, model_sem)
+                scheduler.step()
+                pbar.set_postfix(MSE=accumulated_loss / gradient_acc)  # Display the average loss
+                logger.add_scalar("MSE", accumulated_loss / gradient_acc, global_step=epoch * l + i)
+                accumulated_loss = 0  # Reset the accumulated loss
 
-        if args.sample_freq and epoch % args.sample_freq == 0:# and epoch > 0:
-            # settings = torch.Tensor(args.sample_settings).to(device).unsqueeze(0)
-            # ema_sampled_images = diffusion.sample(ema_model, n=args.sample_size, settings=settings, resize=(256, 512))
-            # save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
-            torch.save(ema_model_stoch.state_dict(), os.path.join("models", args.run_name, f"ema_stoch_ckpt.pt"))
-            torch.save(ema_model_sem.state_dict(), os.path.join("models", args.run_name, f"ema_sem_ckpt.pt"))
-            torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
+
+            if args.sample_freq and epoch % args.sample_freq == 0:# and epoch > 0:
+                # settings = torch.Tensor(args.sample_settings).to(device).unsqueeze(0)
+                # ema_sampled_images = diffusion.sample(ema_model, n=args.sample_size, settings=settings, resize=(256, 512))
+                # save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
+                torch.save(ema_model_stoch.state_dict(), os.path.join("models", args.run_name, f"ema_stoch_ckpt.pt"))
+                torch.save(ema_model_sem.state_dict(), os.path.join("models", args.run_name, f"ema_sem_ckpt.pt"))
+                torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
     
     if not args.sample_freq:
         # if args.sample_size:
@@ -314,12 +345,12 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "diffAE_new_out"
-    args.epochs = 301
+    args.run_name = "diffAE_new_cond"
+    args.epochs = 3001
     args.noise_steps = 700
     args.beta_start = 1e-4
     args.beta_end = 0.02
-    args.batch_size = 6
+    args.batch_size = 4
     args.image_height = 64
     args.image_width = 128
     args.real_size = (256, 512)
@@ -329,18 +360,18 @@ def launch():
     args.device = "cuda:3"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
-    args.grad_acc = 1
+    args.grad_acc = 8
     args.sample_freq = 10
     args.sample_settings = [13.,15.,20.]
     args.sample_size = 8
     args.electron_pointing_pixel = 62
-    args.latent_dim = 128
-    model_sem = SemEncoder(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
+    args.latent_dim = 256
+    model_sem = SemEncoder(img_width=128, img_height=64, feat_num=3, device=args.device, latent_dim=args.latent_dim, time_dim=args.latent_dim).to(args.device)
     ckpt = torch.load("models/transfered_sem.pt", map_location=args.device)
     model_sem.load_state_dict(ckpt)
     # train_latent(args, model_sem)
 
-    model = UNet_conditional(img_width=128, img_height=64, feat_num=128, device=args.device).to(args.device)
+    model = UNet_conditional(img_width=128, img_height=64, feat_num=args.latent_dim, device=args.device, time_dim=args.latent_dim).to(args.device)
     ckpt = torch.load("models/transfered_3block.pt", map_location=args.device)
     model.load_state_dict(ckpt)
     train_AE(args, model, model_sem)
