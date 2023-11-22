@@ -168,7 +168,7 @@ class GaussianDiffusion:
         """
         Sample x_{t-1} from the model using DDIM.
         """
-        out = self.p_mean_variance(model, x, t, y, cfg_scale)
+        out = self.p_mean_variance(model, x, t.to(self.device), y, cfg_scale)
 
         # Usually our model outputs epsilon, but we re-derive it
         # in case we used x_start or x_prev prediction.

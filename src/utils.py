@@ -174,9 +174,10 @@ def stitch_images(directory):
     stitched_image.save(os.path.join(directory, 'stitched_image.png'))
 
 
-def save_samples(images, folder="samples"):
+def save_samples(images, folder="samples", start_index=0):
     ndarr = images.permute(0, 2, 3, 1).to('cpu').numpy()
-    for i, im in enumerate(ndarr):
+    indexes = range(start_index, start_index + len(ndarr))
+    for i, im in zip(indexes, ndarr):
         cv2.imwrite(folder + "/" + str(i) + ".png", im)
 
 
