@@ -50,7 +50,7 @@ class ExperimentDataset(Dataset):
             idx = idx.tolist()
         filename = self.file_list[idx]
         image = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
-        exp_index = int(filename.split('/')[1])
+        exp_index = int(filename.split('/')[-2])
         settings = self.settings.iloc[exp_index-1, 0:]
         settings = np.array([settings])
         settings = settings.astype('float32').reshape(-1, len(self.features))
@@ -209,7 +209,7 @@ def deflection_calc(batch_size, hor_image_size, electron_pointing_pixel):
     pixel_in_mm = 0.137 
     deflection_MeV = torch.zeros((batch_size, hor_image_size))
     deflection_mm = torch.zeros((batch_size, hor_image_size))
-    mat = scipy.io.loadmat('Deflection_curve_Mixture_Feb28.mat')
+    mat = scipy.io.loadmat('data/Deflection_curve_Mixture_Feb28.mat')
     for i in range(hor_image_size):
         if i <= electron_pointing_pixel:
             deflection_mm[:, i] = 0

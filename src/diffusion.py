@@ -103,7 +103,7 @@ class GaussianDiffusion:
         return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * eps, eps
 
     def sample_timesteps(self, n):
-        return torch.randint(low=1, high=self.noise_steps, size=(1,)).expand(n) # TODO revert to random t per image in batch and use mask when accessing t in batches
+        return torch.randint(low=1, high=self.noise_steps, size=(n,))
 
     def sample_ddpm(self, model, n, settings, cfg_scale=3, resize=None):
         logging.info(f"Sampling {n} new images....")
