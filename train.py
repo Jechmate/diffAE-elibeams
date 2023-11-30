@@ -99,24 +99,24 @@ def train(args, model=None):
         optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     else:
         optimizer = optim.AdamW([
-                {"params": model.inc.parameters(), "lr": 1e-2},
-                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-4},
+                {"params": model.inc.parameters(), "lr": 1e-3},
+                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
                 {"params": model.down2.maxpool_conv.parameters(), "lr": 1e-4},
                 {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-4},
-                {"params": model.bot1.parameters(), "lr": 1e-6},
-                {"params": model.bot2.parameters(), "lr": 1e-6},
-                {"params": model.bot3.parameters(), "lr": 1e-6},
+                {"params": model.bot1.parameters(), "lr": 1e-5},
+                {"params": model.bot2.parameters(), "lr": 1e-5},
+                {"params": model.bot3.parameters(), "lr": 1e-5},
                 {"params": model.up1.conv.parameters(), "lr": 1e-4},
                 {"params": model.up2.conv.parameters(), "lr": 1e-4},
-                {"params": model.up3.conv.parameters(), "lr": 1e-4},
-                {"params": model.outc.parameters(), "lr": 1e-2},
+                {"params": model.up3.conv.parameters(), "lr": 1e-3},
+                {"params": model.outc.parameters(), "lr": 1e-3},
             ], lr=args.lr,
         )
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
     mse = nn.MSELoss()
     betas = prepare_noise_schedule(args.noise_steps, args.beta_start, args.beta_end)
     diffusion = GaussianDiffusion(betas=betas, noise_steps=args.noise_steps, img_height=args.image_height, img_width=args.image_width, device=device)
-    sampler = SpacedDiffusion(beta_start=args.beta_start, beta_end=args.beta_end, section_counts=[30], noise_steps=args.noise_steps, img_height=args.image_height, img_width=args.image_width, device=device)
+    sampler = SpacedDiffusion(beta_start=args.beta_start, beta_end=args.beta_end, section_counts=[40], noise_steps=args.noise_steps, img_height=args.image_height, img_width=args.image_width, device=device)
     logger = SummaryWriter(os.path.join("runs", args.run_name))
     l = len(dataloader)
     ema = EMA(0.995)
@@ -169,7 +169,6 @@ def train(args, model=None):
                 x_t_spectr_norm = x_t_spectr_norm.to(device)
                 pred_spectr_norm = pred_spectr_norm.to(device)
                 loss2 = mse(x_t_spectr_norm, pred_spectr_norm) * 10
-                # loss2.requires_grad = True # TODO why is this necessary? Without it it doesnt have a grad_fn which feels wrong
                 el_pointing_adjusted = int(args.electron_pointing_pixel/(args.real_size[1]/args.image_width))
                 pred_norm = (pred.clamp(-1, 1) + 1) / 2
                 loss3 = pred_norm[:, :, :, :el_pointing_adjusted].mean(dim=(0, -2, -1))
@@ -209,10 +208,10 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "physinf_mask"
+    args.run_name = "physinf_halfthresh"
     args.epochs = 301
     args.noise_steps = 700
-    args.physinf_thresh = args.noise_steps // 10
+    args.physinf_thresh = args.noise_steps // 2 # original has // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
     args.batch_size = 8
@@ -223,7 +222,7 @@ def launch():
     args.dataset_path = r"data/with_gain"
     args.csv_path = "data/params.csv"
     args.device = "cuda:3"
-    args.lr = 1e-2
+    args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
     args.sample_freq = 10
