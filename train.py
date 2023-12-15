@@ -171,10 +171,14 @@ def train(args, model=None):
                 loss2 = mse(x_t_spectr_norm, pred_spectr_norm) * 10
                 el_pointing_adjusted = int(args.electron_pointing_pixel/(args.real_size[1]/args.image_width))
                 pred_norm = (pred.clamp(-1, 1) + 1) / 2
+
+                fing_x = int(8/(args.real_size[1]/args.image_width))
+                fing_y = int(8/(args.real_size[0]/args.image_height))
+                pred_norm[:, :, :fing_y, :fing_x] = 0 
                 loss3 = pred_norm[:, :, :, :el_pointing_adjusted].mean(dim=(0, -2, -1))
                 loss2 *= comp_factor
                 loss3 *= comp_factor
-                loss = loss1 + loss2 + loss3
+                loss = loss1 + loss2 # + loss3
             else:
                 loss = loss1
                 loss2 = torch.Tensor([0])
@@ -208,10 +212,10 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "physinf_halfthresh"
+    args.run_name = "physinf_tenth_850ns"
     args.epochs = 301
-    args.noise_steps = 700
-    args.physinf_thresh = args.noise_steps // 2 # original has // 10
+    args.noise_steps = 850
+    args.physinf_thresh = args.noise_steps // 10 # original has // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
     args.batch_size = 8
@@ -221,7 +225,7 @@ def launch():
     args.features = ["E","P","ms"]
     args.dataset_path = r"data/with_gain"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:3"
+    args.device = "cuda:2"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1

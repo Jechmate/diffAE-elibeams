@@ -145,7 +145,7 @@ def get_1d(image, acquisition_time_ms, electron_pointing_pixel, image_gain=0): #
                        image[int(image.shape[0]*0.9),int(image.shape[1]*0.9)],
                        image[int(image.shape[0]*0.1),int(image.shape[1]*0.9)]])
     # noise = np.percentile(image, 70)
-    print(noise)
+    # print(noise)
     image[image <= noise] = 0
     pixel_in_mm = 0.137
     hor_image_size = image.shape[1]
