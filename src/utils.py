@@ -131,7 +131,7 @@ def plot_average_image_pairs(root_folder, acquisition_time_ms, electron_pointing
     plt.show()
     
     
-def plot_image_pairs(images, acquisition_time_ms, electron_pointing_pixel=62, xlim=[2,20]):
+def plot_image_pairs(images, acquisition_time_ms, electron_pointing_pixel=62, xlim=[2,20], titles=[]):
     n = len(images)
     fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
     fig.subplots_adjust(hspace=0.35)  # Increase the space between rows
@@ -146,7 +146,10 @@ def plot_image_pairs(images, acquisition_time_ms, electron_pointing_pixel=62, xl
         axs[i, 1].set_xlabel('Energy (MeV)')
         axs[i, 1].set_xlim(xlim)
         axs[i, 0].imshow(im, vmin=0, vmax=255, cmap='inferno')
-        axs[i, 0].set_title(f"Image {i}")
+        if titles:
+            axs[i, 0].set_title(titles[i])
+        else:
+            axs[i, 0].set_title(f"Image {i}")
     plt.show()
 
 
