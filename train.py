@@ -178,7 +178,7 @@ def train(args, model=None):
                 loss3 = pred_norm[:, :, :, :el_pointing_adjusted].mean(dim=(0, -2, -1))
                 loss2 *= comp_factor
                 loss3 *= comp_factor
-                loss = loss1 + loss2 # + loss3
+                loss = loss1 + loss2 + loss3
             else:
                 loss = loss1
                 loss2 = torch.Tensor([0])

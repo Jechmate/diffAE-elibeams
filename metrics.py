@@ -40,6 +40,20 @@ def compare_avg(dir1, dir2, save=False):
     return avg1, avg2
 
 
+def calculate_pixelwise_variance(folder_path):
+    image_list = []
+    for file_name in os.listdir(folder_path):
+        if file_name.endswith('.png'):  # Check for image file extensions as needed
+            image_path = os.path.join(folder_path, file_name)
+            image = np.array(Image.open(image_path))  # Convert to grayscale
+            image_list.append(image)
+
+    # Stack images and calculate variance along the new axis
+    stacked_images = np.stack(image_list, axis=2)
+    variance_per_pixel = np.var(stacked_images, axis=2)
+    return variance_per_pixel
+
+
 def compare_spectra(train_dir, valid_dir, exp_num):
     train_files = [os.path.join(train_dir, f) for f in os.listdir(train_dir) if f.endswith('.png')]
     valid_files = [os.path.join(valid_dir, f) for f in os.listdir(valid_dir) if f.endswith('.png')]
@@ -67,8 +81,13 @@ def compare_spectra(train_dir, valid_dir, exp_num):
 
     mse = mse_loss(spectr_train, spectr_valid)
     mse_norm = mse_loss(train_norm, valid_norm)
-    dist = dtw.distance(spectr_train.numpy(), spectr_valid.numpy())
-    return {'mse': mse, 'mse_norm' : mse_norm, 'dtw_dist' : dist, 'ssim' : ssim_val}, {'spectr_train' : spectr_train, 'spectr_valid' : spectr_valid}
+
+    variance_train = np.mean(calculate_pixelwise_variance(train_dir))
+    variance_valid = np.mean(calculate_pixelwise_variance(valid_dir))
+
+    var_diff = np.abs(variance_train - variance_valid)
+
+    return {'mse': mse, 'mse_norm' : mse_norm, 'ssim' : ssim_val, 'var_diff' : var_diff}, {'spectr_train' : spectr_train, 'spectr_valid' : spectr_valid}
 
 
 def sample_all(root="models", result_dir="results/transfer_withgain_512_valid", device='cuda:2', n=8, dataset=Path("data/with_gain"), model_prefix='no_', load_model=True, section_counts=[30], cfg_scale=3, ns=700, model=None):
@@ -112,8 +131,8 @@ def main(validate_on = []):
 
     # args.run_name = "physinf_tenth_1000ns"
     args.epochs = 301
-    args.noise_steps = 700
-    args.physinf_thresh = 0 # args.noise_steps // 10 # original has // 10
+    args.noise_steps = 1000
+    args.physinf_thresh = args.noise_steps // 10 # original has // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
     args.batch_size = 8
@@ -123,7 +142,7 @@ def main(validate_on = []):
     args.features = ["E","P","ms"]
     args.dataset_path = r"data/with_gain"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:3"
+    args.device = "cuda:2"
     args.lr = 1e-3
     # args.exclude = []# ['train/19']
     args.grad_acc = 1
@@ -141,7 +160,7 @@ def main(validate_on = []):
 
     for experiment in sorted(experiments, key=lambda x: int(x)):
         args.exclude = [os.path.join(args.dataset_path, experiment)]
-        args.run_name = "valid_nophys_700ns_no_" + experiment
+        args.run_name = "valid_phys_1000ns_fixedbeam_no_" + experiment
         row = settings.loc[[int(experiment) - 1], args.features]
         args.sample_settings = row.values.tolist()[0]
 
@@ -149,17 +168,22 @@ def main(validate_on = []):
         ckpt = torch.load("models/transfered.pt", map_location=args.device)
         model.load_state_dict(ckpt)
         train(args, model)
-
+# [1, 1, 1, 1, 1, 1, 1, 1, 1, 6] 1x9plus6
+# [2, 2, 2, 2, 2, 2, 2, 2, 2, 7] 2x9plus7
 
 if __name__ == "__main__":
     # main(validate_on=['3', '8', '11', '19', '21'])
     # validate on: 3, 8, 11, 19, 21
-    device = "cuda:1"
+    device = "cuda:2"
     # model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=device).to(device)
     # ckpt = torch.load('models/nophys_850steps/ema_ckpt.pt', map_location=device)
     # model.load_state_dict(ckpt)
     # model.eval()
-    sample_all(load_model=True, root="models/valid_phys10th_850ns", result_dir='results/valid_phys10th_850ns_sec1x9plus6_cfg6', device=device, ns=850, section_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 6], n=30, cfg_scale=6)
+    name = 'valid_phys10th_beam_700ns'
+    cfg = 7
+    sample_all(load_model=True, root="models/" + name,
+               result_dir='results/' + name + '_sec15_cfg' + str(cfg),
+               device=device, ns=700, section_counts=[15], n=25, cfg_scale=cfg)
 
 
 # results/valid_nophys_1000ns_sec25_cfg3
@@ -313,3 +337,31 @@ if __name__ == "__main__":
 # Maximum FID: 144.69223531468563 (in subdirectory 8)
 # Minimum FID: 80.75562093081973 (in subdirectory 19)
 # Variance of FID: 609.20258366116697385077
+    
+
+# results/valid_phys10th_beam_850ns_sec45_cfg3
+# Average FID: 107.90585139790268600000
+# Maximum FID: 141.7482187118273 (in subdirectory 8)
+# Minimum FID: 68.30895347767492 (in subdirectory 21)
+# Variance of FID: 939.80932275362970517453
+    
+
+# results/valid_phys10th_beam_850ns_sec1x9plus6_cfg6
+# Average FID: 121.55005888302744000000
+# Maximum FID: 149.4865757966807 (in subdirectory 19)
+# Minimum FID: 91.8146081821778 (in subdirectory 3)
+# Variance of FID: 444.26353581843678116722
+    
+
+# results/valid_phys10th_beam_850ns_sec2x9plus7_cfg3
+# Average FID: 120.25773403817146400000
+# Maximum FID: 133.36373603352686 (in subdirectory 8)
+# Minimum FID: 105.32585166396521 (in subdirectory 11)
+# Variance of FID: 188.66012616077283985686
+    
+
+# results/valid_phys10th_beam_850ns_sec15_cfg3
+# Average FID: 111.15495542589558000000
+# Maximum FID: 137.74181711350232 (in subdirectory 8)
+# Minimum FID: 93.63038593556544 (in subdirectory 11)
+# Variance of FID: 508.85380632680594029027
