@@ -129,25 +129,71 @@ def plot_average_image_pairs(root_folder, acquisition_time_ms, electron_pointing
         axs[i, 0].imshow(avg_im, vmin=0, vmax=255)
         axs[i, 0].set_title(os.path.basename(subfolder))
     plt.show()
-    
-    
-def plot_image_pairs(images, acquisition_time_ms, electron_pointing_pixel=62, xlim=[2,20]):
+
+
+def find_ticks(deflection_MeV, beam_point_x, beam_point_y, pixel_in_mrad, energy_levels, ranges):
+    # Find the index of the first occurrence within each energy level range
+    ticks = {}
+    for energy, (low, high) in zip(energy_levels, ranges):
+        ticks[f'tick{energy}MeV'] = next((i for i, val in enumerate(deflection_MeV[beam_point_x:], start=beam_point_x) if low < val < high), None)
+    # Calculate y-ticks
+    ticks['tick_10mrad_px'] = beam_point_y - round(10 / pixel_in_mrad)
+    ticks['tick0mrad_px'] = beam_point_y
+    ticks['tick10mrad_px'] = beam_point_y + round(10 / pixel_in_mrad)
+    return ticks
+
+
+def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, energy, pressure, xlim=[2, 20], model=1):
+    def get_y_lims_within_xlim(x, y, xlim):
+        """Find the min and max y-values within the specified x-limits."""
+        within_xlim = (x >= xlim[0]) & (x <= xlim[1])
+        y_within_xlim = y[within_xlim]
+        return [np.min(y_within_xlim), np.max(y_within_xlim)] if y_within_xlim.size > 0 else [np.min(y), np.max(y)]
+
     n = len(images)
+    pixel_in_mrad = 0.3653
+    energy_levels = [100, 30, 15, 10, 8, 5, 3]  # Removed 40 and 20
+    ranges = [(70, 101), (20, 31), (12, 15.5), (8, 10.5), (6, 8.2), (4.8, 5.2), (2.9, 3.2)]  # Adjusted ranges
+    
     fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
-    fig.subplots_adjust(hspace=0.35)  # Increase the space between rows
-    fig.subplots_adjust(wspace=0.1)  # Decrease the space between columns
+    fig.subplots_adjust(hspace=0.35, wspace=0.15, top=0.98)
+    title = fig.suptitle(f"Energy: {energy} mJ, Pressure: {pressure} bar, Acquisition time: {acquisition_time_ms} ms, Model: {model}",  fontsize=16)
+    title.set_position([0.5, 1])
+
     for i in range(n):
         im = images[i].cpu().permute(1, 2, 0).numpy()
-        deflection_MeV, spectrum_calibrated = dataset.get_1d(im/255, acquisition_time_ms, electron_pointing_pixel=electron_pointing_pixel)
-
-        axs[i, 1].plot(deflection_MeV, spectrum_calibrated)  # plot without fit
-        axs[i, 1].set_title('Reconstructed Spectrum')
-        axs[i, 1].set_ylabel('Spectral Intensity (pA/MeV)')
-        axs[i, 1].set_xlabel('Energy (MeV)')
+        deflection_MeV, spectrum_calibrated = dataset.get_1d(im/255, acquisition_time_ms, electron_pointing_pixel=beam_point_x)  # Using a local function
+        
+        # Find ticks for the current image
+        ticks = find_ticks(deflection_MeV, beam_point_x, beam_point_y, pixel_in_mrad, energy_levels, ranges)
+        
+        # Plot the spectrum
+        axs[i, 1].plot(deflection_MeV, spectrum_calibrated)
+        axs[i, 1].set_title('Reconstructed Spectrum', fontsize=12)
+        axs[i, 1].set_ylabel('Spectral Intensity (pA/MeV)', fontsize=12)
+        axs[i, 1].set_xlabel('Energy [MeV]', fontsize=12)
         axs[i, 1].set_xlim(xlim)
+        y_lims = get_y_lims_within_xlim(deflection_MeV, spectrum_calibrated, xlim)
+        axs[i, 1].set_ylim(y_lims)
+
+        # Plot the image
         axs[i, 0].imshow(im, vmin=0, vmax=255, cmap='inferno')
         axs[i, 0].set_title(f"Image {i}")
+
+        # Set y-axis ticks for mrad values
+        axs[i, 0].set_yticks([ticks['tick_10mrad_px'], ticks['tick0mrad_px'], ticks['tick10mrad_px']])
+        axs[i, 0].set_yticklabels(['-10', '0', '10'])
+        axs[i, 0].set_ylabel('Angle [mrad]')
+
+        # Set x-axis ticks for MeV values
+        mev_ticks = [tick for key, tick in ticks.items() if 'MeV' in key and tick is not None]
+        axs[i, 0].set_xticks(mev_ticks)
+        axs[i, 0].set_xticklabels([key.split('tick')[1].replace('MeV', '') for key in ticks if 'MeV' in key and ticks[key] is not None])
+        axs[i, 0].set_xlabel('Energy [MeV]')
+
     plt.show()
+
+
 
 
 def stitch_images(directory):

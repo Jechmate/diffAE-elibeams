@@ -178,7 +178,7 @@ def train(args, model=None):
                 loss3 = pred_norm[:, :, :, :el_pointing_adjusted].mean(dim=(0, -2, -1))
                 loss2 *= comp_factor
                 loss3 *= comp_factor
-                loss = loss1 + loss2 + loss3
+                loss = loss1 + loss2
             else:
                 loss = loss1
                 loss2 = torch.Tensor([0])
@@ -212,9 +212,9 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "physinf_tenth_850ns"
+    args.run_name = "2nd_phys_spec_1000ns"
     args.epochs = 301
-    args.noise_steps = 850
+    args.noise_steps = 1000
     args.physinf_thresh = args.noise_steps // 10 # original has // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
@@ -229,7 +229,7 @@ def launch():
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
-    args.sample_freq = 10
+    args.sample_freq = 0
     args.sample_settings = [13.,15.,20.]
     args.sample_size = 8
     args.electron_pointing_pixel = 62
