@@ -1,3 +1,5 @@
+# sources: https://github.com/phizaz/diffae, https://github.com/AaltoML/generative-inverse-heat-dissipation
+
 import numpy as np
 import torch
 import torch.nn as nn

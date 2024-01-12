@@ -1,3 +1,4 @@
+# source: https://github.com/dome272/Diffusion-Models-pytorch
 import os
 import torch
 import torchvision
@@ -157,8 +158,10 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
     
     fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
     fig.subplots_adjust(hspace=0.35, wspace=0.15, top=0.98)
-    title = fig.suptitle(f"Energy: {energy} mJ, Pressure: {pressure} bar, Acquisition time: {acquisition_time_ms} ms, Model: {model}",  fontsize=16)
-    title.set_position([0.5, 1])
+    if n == 1:
+        axs = axs.reshape(1, -1)
+    # title = fig.suptitle(f"Energy: {energy} mJ, Pressure: {pressure} bar, Acquisition time: {acquisition_time_ms} ms, Model: {model}",  fontsize=16)
+    # title.set_position([0.5, 1])
 
     for i in range(n):
         im = images[i].cpu().permute(1, 2, 0).numpy()
