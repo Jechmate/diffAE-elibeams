@@ -17,75 +17,19 @@ from src.diffusion import *
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
 
-def train_IHD(args, model=None):
-    # dist.init_process_group(backend='nccl', init_method='env://', rank=torch.cuda.device_count(), world_size=1)
-    setup_logging(args.run_name)
-    device = args.device
-    dataloader = get_data(args)
-    gradient_acc = args.grad_acc
-    steps_per_epoch = len(dataloader) / gradient_acc
-    if not model:
-        model = UNet_conditional(img_height=args.image_height, img_width=args.image_width, device=device, feat_num=len(args.features)).to(device)
-        optimizer = optim.AdamW(model.parameters(), lr=args.lr)
-    else:
-        optimizer = optim.AdamW([
-                {"params": model.inc.parameters(), "lr": 1e-3},
-                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
-                {"params": model.down2.maxpool_conv.parameters(), "lr": 1e-4},
-                {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-6},
-                {"params": model.bot1.parameters(), "lr": 1e-6},
-                {"params": model.bot2.parameters(), "lr": 1e-6},
-                {"params": model.bot3.parameters(), "lr": 1e-6},
-                {"params": model.up1.conv.parameters(), "lr": 1e-6},
-                {"params": model.up2.conv.parameters(), "lr": 1e-4},
-                {"params": model.up3.conv.parameters(), "lr": 1e-3},
-                {"params": model.outc.parameters(), "lr": 1e-3},
-            ], lr=args.lr,
-        )
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
-    mse = nn.MSELoss()
-    logger = SummaryWriter(os.path.join("runs", args.run_name))
-    l = len(dataloader)
-    ema = EMA(0.995)
-    ema_model = copy.deepcopy(model).eval().requires_grad_(False)
-    sigma = 0.01
-    delta = 0.0125
-    blur_sigma_max = 64
-    blur_sigma_min = 0.5
-    heat_forward_module = DCTBlur(img_width=args.image_width, img_height=args.image_height, device=args.device, noise_steps=args.noise_steps)
-    heat_forward_module.prepare_blur_schedule(blur_sigma_max, blur_sigma_min)
+def sigmoid(x: int,
+            scaling: float = 2,
+            shift: float = 0,
+            ) -> float:
+    return 1 - (1 + torch.exp(-x*scaling + shift))**-1
 
-    for epoch in range(args.epochs):
-        logging.info(f"Starting epoch {epoch}:")
-        pbar = tqdm(dataloader)
-        for i, data in enumerate(pbar):
-            images = data['image'].to(device)
-            settings = data['settings'].to(device)
-            t = heat_forward_module.sample_timesteps(images.shape[0]).to(device)
-            blurred_batch = heat_forward_module(images, t).float()
-            less_blurred_batch = heat_forward_module(images, t-1).float()
-            noise = torch.randn_like(blurred_batch) * sigma
-            perturbed_data = noise + blurred_batch
-            if epoch == 0 and i == 0:
-                summary(model, perturbed_data, t, settings, device=device)
-            diff = model(perturbed_data, t, settings)
-            prediction = perturbed_data + diff
-            loss = mse(less_blurred_batch, prediction)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            ema.step_ema(ema_model, model)
-            scheduler.step()
-            pbar.set_postfix(MSE=loss.item())
-            logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
-        if epoch % 10 == 0:
-            settings = torch.Tensor([13.,15,20.]).to(device).unsqueeze(0)
-            ema_sampled_images = heat_forward_module.sample(trainloader=get_data(args), device=args.device, model=ema_model, delta=delta, settings=settings, resize=(256, 512))
-            save_images(ema_sampled_images, os.path.join("results", args.run_name, f"{epoch}_ema.jpg"))
-            torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
-            torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
-            
+def sigmoid_loss(x: torch.Tensor, el_pointing=64, pixel_in_mm=0.137, device='cpu') -> torch.Tensor:
+    distance = torch.arange(-el_pointing, x.shape[-1]-el_pointing) * pixel_in_mm
+    distance.to(device)
+    sig = sigmoid(distance).to(device)
+    return x*sig
+
 
 def train(args, model=None):
     setup_logging(args.run_name)
@@ -170,15 +114,16 @@ def train(args, model=None):
                 pred_spectr_norm = pred_spectr_norm.to(device)
                 loss2 = mse(x_t_spectr_norm, pred_spectr_norm) * 10
                 el_pointing_adjusted = int(args.electron_pointing_pixel/(args.real_size[1]/args.image_width))
+                pixel_in_mm_adjusted = 0.137*(args.real_size[1]/args.image_width)
                 pred_norm = (pred.clamp(-1, 1) + 1) / 2
 
                 fing_x = int(8/(args.real_size[1]/args.image_width))
                 fing_y = int(8/(args.real_size[0]/args.image_height))
                 pred_norm[:, :, :fing_y, :fing_x] = 0 
-                loss3 = pred_norm[:, :, :, :el_pointing_adjusted].mean(dim=(0, -2, -1))
+                loss3 = torch.mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device)) * 10
                 loss2 *= comp_factor
                 loss3 *= comp_factor
-                loss = loss1 + loss2
+                loss = loss1 + loss2 + loss3
             else:
                 loss = loss1
                 loss2 = torch.Tensor([0])
@@ -188,7 +133,6 @@ def train(args, model=None):
             optimizer.step()
             ema.step_ema(ema_model, model)
             scheduler.step()
-            # if (i+1) % gradient_acc == 0:
             pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item()), "BASIC": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
@@ -207,14 +151,14 @@ def train(args, model=None):
         torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
         torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
 
-
+# TODO change loss2 to use double exp decay
 def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "2nd_phys_spec_1000ns"
+    args.run_name = "1st_sig_beamloss"
     args.epochs = 301
-    args.noise_steps = 1000
+    args.noise_steps = 850
     args.physinf_thresh = args.noise_steps // 10 # original has // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
@@ -232,7 +176,7 @@ def launch():
     args.sample_freq = 0
     args.sample_settings = [13.,15.,20.]
     args.sample_size = 8
-    args.electron_pointing_pixel = 62
+    args.electron_pointing_pixel = 62 # TODO why the fuck is this not 64
 
     model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
     ckpt = torch.load("models/transfered.pt", map_location=args.device)

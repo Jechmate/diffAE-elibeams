@@ -132,8 +132,8 @@ def find_laser(images):
     return max_x, max_y
 
 
-def crop_by_laser(image, laser_pos):
-    return image[laser_pos[1] - 128:laser_pos[1] + 128, laser_pos[0] - 62:laser_pos[0] + 450]
+def crop_by_beam(image, beam_pos, x_index=62, size=(256, 512)):
+    return image[beam_pos[1] - size[0]//2:beam_pos[1] + size[0]//2, beam_pos[0] - x_index:beam_pos[0] + size[1] - x_index]
 
 
 def get_1d(image, acquisition_time_ms, electron_pointing_pixel, image_gain=0): # image should be 0 - 1 values
@@ -213,8 +213,8 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
         calib = [remove_dots(a, calib_dots) for a in calib]
         
         # Crop by laser pos
-        laser_pos = find_laser(calib)
-        images = [crop_by_laser(a, laser_pos) for a in images]
+        beam_pos = find_laser(calib)
+        images = [crop_by_beam(a, beam_pos) for a in images]
         # Save results
         os.mkdir(output_folder/experiment)
         for i, im in enumerate(images):

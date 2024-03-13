@@ -126,12 +126,13 @@ def sample_all(root="models", result_dir="results/transfer_withgain_512_valid", 
 
 
 def main(validate_on = []):
+    import argparse
     parser = argparse.ArgumentParser()
-    args = parser.parse_args()
 
-    # args.run_name = "physinf_tenth_1000ns"
+    args = parser.parse_args()
+    # args.run_name = "1st_sig_beamloss"
     args.epochs = 301
-    args.noise_steps = 1000
+    args.noise_steps = 850
     args.physinf_thresh = args.noise_steps // 10 # original has // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
@@ -142,14 +143,14 @@ def main(validate_on = []):
     args.features = ["E","P","ms"]
     args.dataset_path = r"data/with_gain"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:2"
+    args.device = "cuda:0"
     args.lr = 1e-3
-    # args.exclude = []# ['train/19']
+    args.exclude = []# ['train/19']
     args.grad_acc = 1
     args.sample_freq = 0
     args.sample_settings = [13.,15.,20.]
     args.sample_size = 8
-    args.electron_pointing_pixel = 62
+    args.electron_pointing_pixel = 62 # TODO why the fuck is this not 64
 
     settings = pd.read_csv(args.csv_path, engine='python')[args.features]
 
@@ -160,7 +161,7 @@ def main(validate_on = []):
 
     for experiment in sorted(experiments, key=lambda x: int(x)):
         args.exclude = [os.path.join(args.dataset_path, experiment)]
-        args.run_name = "valid_phys_1000ns_fixedbeam_no_" + experiment
+        args.run_name = "valid_1st_sig_beamloss" + experiment
         row = settings.loc[[int(experiment) - 1], args.features]
         args.sample_settings = row.values.tolist()[0]
 
@@ -172,18 +173,18 @@ def main(validate_on = []):
 # [2, 2, 2, 2, 2, 2, 2, 2, 2, 7] 2x9plus7
 
 if __name__ == "__main__":
-    # main(validate_on=['3', '8', '11', '19', '21'])
+    main(validate_on=['3', '8', '11', '19', '21'])
     # validate on: 3, 8, 11, 19, 21
-    device = "cuda:2"
+    # device = "cuda:2"
     # model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=device).to(device)
     # ckpt = torch.load('models/nophys_850steps/ema_ckpt.pt', map_location=device)
     # model.load_state_dict(ckpt)
     # model.eval()
-    name = 'valid_phys10th_beam_700ns'
-    cfg = 7
-    sample_all(load_model=True, root="models/" + name,
-               result_dir='results/' + name + '_sec15_cfg' + str(cfg),
-               device=device, ns=700, section_counts=[15], n=25, cfg_scale=cfg)
+    # name = 'valid_phys10th_beam_700ns'
+    # cfg = 7
+    # sample_all(load_model=True, root="models/" + name,
+    #            result_dir='results/' + name + '_sec15_cfg' + str(cfg),
+    #            device=device, ns=700, section_counts=[15], n=25, cfg_scale=cfg)
 
 
 # results/valid_nophys_1000ns_sec25_cfg3

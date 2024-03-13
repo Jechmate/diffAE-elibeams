@@ -1,67 +1,10 @@
 # sources: https://github.com/phizaz/diffae, https://github.com/AaltoML/generative-inverse-heat-dissipation
 
-import numpy as np
 import torch
-import torch.nn as nn
 from tqdm import tqdm
-import src.torch_dct as torch_dct
 import logging
 from torchsummary import summary
 import torchvision.transforms.functional as f
-
-
-class DCTBlur(nn.Module): # TODO use pytorch instead of np
-
-    def __init__(self, img_width, img_height, device, noise_steps):
-        super(DCTBlur, self).__init__()
-        self.device = device
-        self.noise_steps = noise_steps
-        freqs_hor = np.pi*torch.linspace(0, img_width-1,img_width).to(device)/img_width
-        freqs_ver = np.pi*torch.linspace(0, img_height-1,img_height).to(device)/img_height
-        self.frequencies_squared = freqs_hor[None, :]**2 + freqs_ver[:, None]**2 # swapped None and :, sizes didnt match
-
-    def sample_timesteps(self, n):
-        return torch.randint(low=1, high=self.noise_steps, size=(n,))
-
-    def prepare_blur_schedule(self, blur_sigma_max, blur_sigma_min):
-        self.blur_schedule = torch.Tensor().to(self.device)
-        self.blur_schedule = np.exp(np.linspace(np.log(blur_sigma_min), np.log(blur_sigma_max), self.noise_steps))
-        self.blur_schedule = torch.Tensor(np.array([0] + list(self.blur_schedule))).to(self.device)  # Add the k=0 timestep
-
-    def forward(self, x, t):
-        sigmas = self.blur_schedule[t][:, None, None, None]
-        t = sigmas**2/2
-        dct_coefs = torch_dct.dct_2d(x, norm='ortho')
-        dct_coefs = dct_coefs * torch.exp(-self.frequencies_squared * t)
-        return torch_dct.idct_2d(dct_coefs, norm='ortho')
-    
-    def get_initial_sample(self, trainloader, device):
-        """Take a draw from the prior p(u_K)"""
-        initial_sample = next(iter(trainloader))['image'].to(device)
-        # original_images = initial_sample.clone()
-        initial_sample = self.forward(initial_sample, (self.noise_steps * torch.ones(initial_sample.shape[0]).long()).to(device))
-        return initial_sample # , original_images
-    
-    def sample(self, trainloader, device, model, delta, settings, cfg_scale=3, resize=None):
-        initial_sample = self.get_initial_sample(trainloader, device)
-        with torch.no_grad():
-            u = initial_sample.to(device).float()
-            for i in tqdm(range(self.noise_steps, 0, -1)):
-                vec_fwd_steps = torch.ones(
-                    initial_sample.shape[0], device=device, dtype=torch.long) * i
-                # Predict less blurry mean
-                u_mean = model(u, vec_fwd_steps, settings) + u
-                if cfg_scale > 0: # TODO this may be bs
-                    uncond_mean = model(u, vec_fwd_steps, None) + u
-                    u_mean = torch.lerp(uncond_mean, u_mean, cfg_scale)
-                # Sampling step
-                noise = torch.randn_like(u)
-                u = u_mean + noise*delta
-            u_mean = (u_mean.clamp(-1, 1) + 1) / 2
-            u_mean = (u_mean * 255).type(torch.uint8)
-            if resize:
-                u_mean = f.resize(u_mean, resize, antialias=True)
-            return u_mean
 
 
 def prepare_noise_schedule(noise_steps, beta_start, beta_end):
@@ -147,7 +90,7 @@ class GaussianDiffusion:
         final["sample"] = (final["sample"] * 255).type(torch.uint8)
         if resize:
             final["sample"] = f.resize(final["sample"], resize, antialias=True)
-        return final["sample"]
+        return final["sample"].squeeze()
 
     def ddim_sample_loop_progressive(self, model, y, cfg_scale=3, device="cpu", eta=0.0, n=4):
         """

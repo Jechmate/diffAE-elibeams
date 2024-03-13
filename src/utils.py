@@ -146,10 +146,10 @@ def find_ticks(deflection_MeV, beam_point_x, beam_point_y, pixel_in_mrad, energy
 
 def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, energy, pressure, xlim=[2, 20], model=1):
     def get_y_lims_within_xlim(x, y, xlim):
-        """Find the min and max y-values within the specified x-limits."""
+        """Find the min and max y-values within the specified x-limits using PyTorch."""
         within_xlim = (x >= xlim[0]) & (x <= xlim[1])
         y_within_xlim = y[within_xlim]
-        return [np.min(y_within_xlim), np.max(y_within_xlim)] if y_within_xlim.size > 0 else [np.min(y), np.max(y)]
+        return [torch.min(y_within_xlim), torch.max(y_within_xlim)] if y_within_xlim.numel() > 0 else [torch.min(y), torch.max(y)]
 
     n = len(images)
     pixel_in_mrad = 0.3653
@@ -162,11 +162,12 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
         axs = axs.reshape(1, -1)
     # title = fig.suptitle(f"Energy: {energy} mJ, Pressure: {pressure} bar, Acquisition time: {acquisition_time_ms} ms, Model: {model}",  fontsize=16)
     # title.set_position([0.5, 1])
-
+    deflection_MeV = deflection_biexp_calc(n, images.shape[-1], beam_point_x)[0].unsqueeze(0) # make it batched but of batchsize 1
     for i in range(n):
-        im = images[i].cpu().permute(1, 2, 0).numpy()
-        deflection_MeV, spectrum_calibrated = dataset.get_1d(im/255, acquisition_time_ms, electron_pointing_pixel=beam_point_x)  # Using a local function
-        
+        im = images[i].unsqueeze(0)#.cpu().permute(1, 2, 0).numpy()
+        deflection_MeV, spectrum_calibrated = calc_spec(im/255, beam_point_x, deflection_MeV, torch.tensor(acquisition_time_ms))  # Using a local function
+        deflection_MeV = deflection_MeV.squeeze()
+        spectrum_calibrated = spectrum_calibrated.squeeze()
         # Find ticks for the current image
         ticks = find_ticks(deflection_MeV, beam_point_x, beam_point_y, pixel_in_mrad, energy_levels, ranges)
         
@@ -180,7 +181,7 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
         axs[i, 1].set_ylim(y_lims)
 
         # Plot the image
-        axs[i, 0].imshow(im, vmin=0, vmax=255, cmap='inferno')
+        axs[i, 0].imshow(im.squeeze().cpu(), vmin=0, vmax=255, cmap='inferno')
         axs[i, 0].set_title(f"Image {i}")
 
         # Set y-axis ticks for mrad values
@@ -193,7 +194,7 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
         axs[i, 0].set_xticks(mev_ticks)
         axs[i, 0].set_xticklabels([key.split('tick')[1].replace('MeV', '') for key in ticks if 'MeV' in key and ticks[key] is not None])
         axs[i, 0].set_xlabel('Energy [MeV]')
-
+        deflection_MeV = deflection_MeV.unsqueeze(0)
     plt.show()
 
 
@@ -278,6 +279,22 @@ def deflection_calc(batch_size, hor_image_size, electron_pointing_pixel):
     return deflection_MeV
 
 
+def bi_exponential_deflection(x, a1 = 77.855568601465, b1 = 0.466485822903793, a2 = 19.911755340829, b2 = 0.043573073167125255):
+    return a1 * torch.exp(-b1 * x) + a2 * torch.exp(-b2 * x)
+
+
+def deflection_biexp_calc(batch_size, hor_image_size, electron_pointing_pixel):
+    pixel_in_mm = 0.137
+    linear_space = torch.arange(hor_image_size) * pixel_in_mm
+    linear_space -= electron_pointing_pixel * pixel_in_mm
+    deflection_mm = linear_space.clamp(min=0)
+    deflection_mm = deflection_mm.repeat(batch_size, 1)
+    mask = deflection_mm > 1
+    deflection_MeV = torch.zeros_like(deflection_mm)
+    deflection_MeV[mask] = bi_exponential_deflection(deflection_mm[mask]).to(torch.float32)
+    return deflection_MeV
+
+
 def calc_spec(image, electron_pointing_pixel, deflection_MeV, acquisition_time_ms, image_gain=0, resize=None, noise=False, device='cpu'):
     if resize:
         image = f.resize(image, resize, antialias=True)
@@ -289,9 +306,9 @@ def calc_spec(image, electron_pointing_pixel, deflection_MeV, acquisition_time_m
         noise = noise.unsqueeze(1).unsqueeze(2)
         image[image <= noise] = 0
     # acquisition_time_ms = 10
-    hor_image_size = image.shape[3]
+    hor_image_size = image.shape[-1]
     batch_size = image.shape[0]
-    horizontal_profile = torch.sum(image, dim=(1, 2)).to(device)
+    horizontal_profile = torch.sum(image, dim=(1)).to(device)
     spectrum_in_pixel = torch.zeros((batch_size, hor_image_size)).to(device)
     spectrum_in_MeV = torch.zeros((batch_size, hor_image_size)).to(device)
             
