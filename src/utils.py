@@ -170,7 +170,7 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
         # deflection_MeV = deflection_MeV.squeeze()
         # spectrum_calibrated = spectrum_calibrated.squeeze()
         # Find ticks for the current image
-        ticks = find_ticks(deflection_MeV, beam_point_x, beam_point_y, pixel_in_mrad, energy_levels, ranges)
+        ticks = find_ticks(deflection_MeV.squeeze().cpu(), beam_point_x, beam_point_y, pixel_in_mrad, energy_levels, ranges)
         # Plot the spectrum
         axs[i, 1].plot(deflection_MeV.squeeze().cpu(), spectrum_calibrated.squeeze().cpu())
         axs[i, 1].set_title('Reconstructed Spectrum', fontsize=12)
