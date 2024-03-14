@@ -155,7 +155,7 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
     pixel_in_mrad = 0.3653
     energy_levels = [100, 30, 15, 10, 8, 5, 3]  # Removed 40 and 20
     ranges = [(70, 101), (20, 31), (12, 15.5), (8, 10.5), (6, 8.2), (4.8, 5.2), (2.9, 3.2)]  # Adjusted ranges
-    
+
     fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
     fig.subplots_adjust(hspace=0.35, wspace=0.15, top=0.98)
     if n == 1:
@@ -163,17 +163,16 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
     # title = fig.suptitle(f"Energy: {energy} mJ, Pressure: {pressure} bar, Acquisition time: {acquisition_time_ms} ms, Model: {model}",  fontsize=16)
     # title.set_position([0.5, 1])
     # deflection_MeV = deflection_biexp_calc(n, images.shape[-1], beam_point_x)[0].unsqueeze(0) # make it batched but of batchsize 1
-    deflection_MeV = deflection_calc(n,  images.shape[-1], beam_point_x)
+    deflection_MeV = deflection_calc(1, images.shape[-1], beam_point_x)
     for i in range(n):
-        im = images[i].unsqueeze(0)#.cpu().permute(1, 2, 0).numpy()
+        im = images[i]#.unsqueeze(0)#.cpu().permute(1, 2, 0).numpy()
         deflection_MeV, spectrum_calibrated = calc_spec(im/255, beam_point_x, deflection_MeV, torch.tensor(acquisition_time_ms))  # Using a local function
-        deflection_MeV = deflection_MeV.squeeze()
-        spectrum_calibrated = spectrum_calibrated.squeeze()
+        # deflection_MeV = deflection_MeV.squeeze()
+        # spectrum_calibrated = spectrum_calibrated.squeeze()
         # Find ticks for the current image
         ticks = find_ticks(deflection_MeV, beam_point_x, beam_point_y, pixel_in_mrad, energy_levels, ranges)
-        
         # Plot the spectrum
-        axs[i, 1].plot(deflection_MeV, spectrum_calibrated)
+        axs[i, 1].plot(deflection_MeV.squeeze().cpu(), spectrum_calibrated.squeeze().cpu())
         axs[i, 1].set_title('Reconstructed Spectrum', fontsize=12)
         axs[i, 1].set_ylabel('Spectral Intensity (pA/MeV)', fontsize=12)
         axs[i, 1].set_xlabel('Energy [MeV]', fontsize=12)
@@ -195,7 +194,7 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
         axs[i, 0].set_xticks(mev_ticks)
         axs[i, 0].set_xticklabels([key.split('tick')[1].replace('MeV', '') for key in ticks if 'MeV' in key and ticks[key] is not None])
         axs[i, 0].set_xlabel('Energy [MeV]')
-        deflection_MeV = deflection_MeV.unsqueeze(0)
+        # deflection_MeV = deflection_MeV.unsqueeze(0)
     plt.show()
 
 

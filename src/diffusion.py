@@ -5,6 +5,8 @@ from tqdm import tqdm
 import logging
 from torchsummary import summary
 import torchvision.transforms.functional as f
+import torchvision.transforms as transforms
+import cv2
 
 
 def prepare_noise_schedule(noise_steps, beta_start, beta_end):
@@ -89,8 +91,10 @@ class GaussianDiffusion:
         final["sample"] = (final["sample"].clamp(-1, 1) + 1) / 2
         final["sample"] = (final["sample"] * 255).type(torch.uint8)
         if resize:
-            final["sample"] = f.resize(final["sample"], resize, antialias=True)
-        return final["sample"].squeeze()
+            resize_transform = transforms.Resize(resize, antialias=False)
+            final["sample"] = resize_transform(final["sample"])
+            # final["sample"] = f.resize(final["sample"], resize, antialias=True)
+        return final["sample"]
 
     def ddim_sample_loop_progressive(self, model, y, cfg_scale=3, device="cpu", eta=0.0, n=4):
         """

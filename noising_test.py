@@ -18,24 +18,26 @@ def gaussian_test():
     args.csv_path = "data/params.csv"
     args.features = ["E","P","ms"]
     args.exclude = []# ['train/19']
+    
+
 
     dataloader = get_data(args)
 
-    betas = prepare_noise_schedule(noise_steps=1000, beta_end=0.02, beta_start=1e-4)
+    betas = prepare_noise_schedule(noise_steps=800, beta_end=0.02, beta_start=1e-4)
     diff = GaussianDiffusion(device="cpu", img_height=args.image_height, img_width=args.image_width, betas=betas)
 
 
-    image = next(iter(dataloader))['image']
+    image = next(iter(dataloader))['image'].to("cpu")
 
-    image_path = 'cropped.png'
-    image = Image.open(image_path)
-    transform = transforms.ToTensor()
-    image = transform(image)
+    # image_path = 'cropped.png'
+    # image = Image.open(image_path)
+    # transform = transforms.ToTensor()
+    # image = transform(image)
 
-    t = torch.Tensor([0, 99, 250, 499]).long()
+    t = torch.Tensor([0, 99, 199, 299, 399, 499, 599, 699, 799]).long()
 
     noised_image, _ = diff.noise_images(image, t)
-    save_image(noised_image, "gausss.png")
+    save_image(noised_image, "blur_cpu.png")
 
 
 def ihd_test():
