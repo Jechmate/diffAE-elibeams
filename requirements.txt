@@ -1,0 +1,11 @@
+torch==2.2.1
+torchvision==0.17.1
+torchaudio==0.13.0
+tqdm==4.65
+torch-summary==1.4.5
+matplotlib==3.7.2
+pandas==2.1.4
+opencv-python==4.8.0.74
+scipy==1.10.1
+ipython
+ipywidgets
