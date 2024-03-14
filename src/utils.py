@@ -162,7 +162,8 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
         axs = axs.reshape(1, -1)
     # title = fig.suptitle(f"Energy: {energy} mJ, Pressure: {pressure} bar, Acquisition time: {acquisition_time_ms} ms, Model: {model}",  fontsize=16)
     # title.set_position([0.5, 1])
-    deflection_MeV = deflection_biexp_calc(n, images.shape[-1], beam_point_x)[0].unsqueeze(0) # make it batched but of batchsize 1
+    # deflection_MeV = deflection_biexp_calc(n, images.shape[-1], beam_point_x)[0].unsqueeze(0) # make it batched but of batchsize 1
+    deflection_MeV = deflection_calc(n,  images.shape[-1], beam_point_x)
     for i in range(n):
         im = images[i].unsqueeze(0)#.cpu().permute(1, 2, 0).numpy()
         deflection_MeV, spectrum_calibrated = calc_spec(im/255, beam_point_x, deflection_MeV, torch.tensor(acquisition_time_ms))  # Using a local function
