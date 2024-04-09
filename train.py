@@ -25,10 +25,13 @@ def sigmoid(x: int,
 
 
 def sigmoid_loss(x: torch.Tensor, el_pointing=64, pixel_in_mm=0.137, device='cpu') -> torch.Tensor:
-    distance = torch.arange(-el_pointing, x.shape[-1]-el_pointing) * pixel_in_mm
-    distance.to(device)
+    distance = torch.arange(-el_pointing, x.shape[-1]-el_pointing, device=device) * pixel_in_mm
     sig = sigmoid(distance).to(device)
     return x*sig
+
+def sigmoid_schedule(step, max_steps=850, k=0.08):
+    x_0 = max_steps/10
+    return 20 - (20 / (1 + torch.exp(-k * (step - x_0))))
 
 
 def train(args, model=None):
@@ -65,7 +68,14 @@ def train(args, model=None):
     l = len(dataloader)
     ema = EMA(0.995)
     ema_model = copy.deepcopy(model).eval().requires_grad_(False).to(device)
-    deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
+
+    el_pointing_adjusted = int(args.electron_pointing_pixel/(args.real_size[1]/args.image_width))
+    pixel_in_mm_adjusted = 0.137*(args.real_size[1]/args.image_width)
+    fing_x = int(10/(args.real_size[1]/args.image_width))
+    fing_y = int(8/(args.real_size[0]/args.image_height))
+
+    # deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
+    deflection_MeV = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, pixel_in_mm_adjusted).to(device)
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -74,7 +84,7 @@ def train(args, model=None):
             images = data['image'].to(device)
             settings = data['settings'].to(device)
             acq_time = settings[:, 2]
-            t = diffusion.sample_timesteps(images.shape[0]).to(device)
+            t = diffusion.sample_timesteps(images.shape[0], all_same=True).to(device)
             x_t, noise = diffusion.noise_images(images, t)
             if epoch == 0 and i == 0:
                 summary(model, x_t, t, settings, device=device)
@@ -82,52 +92,32 @@ def train(args, model=None):
                 settings = None
             predicted_noise = model(x_t, t, settings)
             loss1 = mse(noise, predicted_noise)
-            mask = (t < args.physinf_thresh)
-
-            # Calculate the compensation factor for losses 2 and 3
-            comp_factor = mask.float().mean()
-
-            if mask.any():
-                pred, _ = diffusion.noise_images(images, t, predicted_noise)
-                pred = pred[mask]
-                deflection_MeV_masked = deflection_MeV[mask]
-                x_t = x_t[mask]
-                acq_time = acq_time[mask]
-                _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
-                                            args.electron_pointing_pixel, 
-                                            deflection_MeV_masked, 
-                                            acquisition_time_ms=acq_time, 
-                                            resize=args.real_size,
-                                            device=device)
-                _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), 
-                                            args.electron_pointing_pixel, 
-                                            deflection_MeV_masked, 
-                                            acquisition_time_ms=acq_time, 
-                                            resize=args.real_size,
-                                            device=device)
-                concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1) # TODO normalizes over batch, would be better image by image
-                max_val = torch.max(concatenated)
-                min_val = torch.min(concatenated)
-                x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
-                pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
-                x_t_spectr_norm = x_t_spectr_norm.to(device)
-                pred_spectr_norm = pred_spectr_norm.to(device)
-                loss2 = mse(x_t_spectr_norm, pred_spectr_norm) * 10
-                el_pointing_adjusted = int(args.electron_pointing_pixel/(args.real_size[1]/args.image_width))
-                pixel_in_mm_adjusted = 0.137*(args.real_size[1]/args.image_width)
-                pred_norm = (pred.clamp(-1, 1) + 1) / 2
-
-                fing_x = int(8/(args.real_size[1]/args.image_width))
-                fing_y = int(8/(args.real_size[0]/args.image_height))
-                pred_norm[:, :, :fing_y, :fing_x] = 0 
-                loss3 = torch.mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device)) * 10
-                loss2 *= comp_factor
-                loss3 *= comp_factor
-                loss = loss1 + loss2 + loss3
-            else:
-                loss = loss1
-                loss2 = torch.Tensor([0])
-                loss3 = torch.Tensor([0])
+            pred, _ = diffusion.noise_images(images, t, predicted_noise)
+            _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
+                                        args.electron_pointing_pixel, 
+                                        deflection_MeV, 
+                                        acquisition_time_ms=acq_time, 
+                                        resize=args.real_size,
+                                        image_gain=50,
+                                        device=device)
+            _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), 
+                                        args.electron_pointing_pixel, 
+                                        deflection_MeV, 
+                                        acquisition_time_ms=acq_time, 
+                                        resize=args.real_size,
+                                        image_gain=50,
+                                        device=device)
+            concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1)
+            max_val = torch.max(concatenated)
+            min_val = torch.min(concatenated)
+            x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
+            pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
+            pred_norm = (pred.clamp(-1, 1) + 1) / 2
+            pred_norm[:, :, :fing_y, :fing_x] = 0
+            phys_weight = sigmoid_schedule(t[0], max_steps=args.noise_steps)
+            loss2 = mse(x_t_spectr_norm, pred_spectr_norm)
+            loss3 = torch.mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device))
+            loss = loss1 + (loss2 + loss3) * phys_weight
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -151,23 +141,22 @@ def train(args, model=None):
         torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
         torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
 
-# TODO change loss2 to use double exp decay
 def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "1st_sig_beamloss"
+    args.run_name = "1st_gain50_physsched"
     args.epochs = 301
     args.noise_steps = 850
     args.physinf_thresh = args.noise_steps // 10 # original has // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
-    args.batch_size = 8
+    args.batch_size = 6
     args.image_height = 64
     args.image_width = 128
     args.real_size = (256, 512)
     args.features = ["E","P","ms"]
-    args.dataset_path = r"data/with_gain"
+    args.dataset_path = r"data/gain50"
     args.csv_path = "data/params.csv"
     args.device = "cuda:2"
     args.lr = 1e-3
@@ -176,7 +165,7 @@ def launch():
     args.sample_freq = 0
     args.sample_settings = [13.,15.,20.]
     args.sample_size = 8
-    args.electron_pointing_pixel = 62 # TODO why the fuck is this not 64
+    args.electron_pointing_pixel = 64
 
     model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
     ckpt = torch.load("models/transfered.pt", map_location=args.device)

@@ -5,6 +5,7 @@ from tqdm import tqdm
 import logging
 from torchsummary import summary
 import torchvision.transforms.functional as f
+from src.dataset import remove_gain
 
 
 def prepare_noise_schedule(noise_steps, beta_start, beta_end):
@@ -47,8 +48,11 @@ class GaussianDiffusion:
             eps = torch.randn_like(x)
         return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * eps, eps
 
-    def sample_timesteps(self, n):
-        return torch.randint(low=1, high=self.noise_steps, size=(n,))
+    def sample_timesteps(self, n, all_same):
+        if all_same:
+            return torch.randint(low=1, high=self.noise_steps, size=(1,)).expand(n)
+        else:
+            return torch.randint(low=1, high=self.noise_steps, size=(n,))
 
     def sample_ddpm(self, model, n, settings, cfg_scale=3, resize=None):
         logging.info(f"Sampling {n} new images....")
@@ -76,7 +80,7 @@ class GaussianDiffusion:
             x = f.resize(x, resize, antialias=True)
         return x
     
-    def ddim_sample_loop(self, model, y, cfg_scale=3, device=None, eta=0.0, n=4, resize=(256, 512)):
+    def ddim_sample_loop(self, model, y, cfg_scale=3, device=None, eta=0.0, n=4, resize=(256, 512), gain=0):
         """
         Generate samples from the model using DDIM.
 
@@ -90,6 +94,8 @@ class GaussianDiffusion:
         final["sample"] = (final["sample"] * 255).type(torch.uint8)
         if resize:
             final["sample"] = f.resize(final["sample"], resize, antialias=True)
+        if gain:
+            final["sample"] = remove_gain(final["sample"], gain, tensor=True)
         return final["sample"].squeeze()
 
     def ddim_sample_loop_progressive(self, model, y, cfg_scale=3, device="cpu", eta=0.0, n=4):

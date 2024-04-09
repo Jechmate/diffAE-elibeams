@@ -9,6 +9,7 @@ from pathlib import Path
 import cv2
 import pandas as pd
 import scipy
+import torch
 
 
 def add_fingerprint(image, size=5):
@@ -58,12 +59,6 @@ def preprocess_image(img):
 
 
 # srcs: https://docs.baslerweb.com/gain, https://www.quora.com/What-is-the-formula-for-converting-decibels-to-linear-units
-def remove_gain(img, gain_raw):
-    if not gain_raw: return img
-    gain_dB = 20 * np.log10(gain_raw / 32)
-    gain_lin = np.power(10, gain_dB/10)
-    img_nogain = img / gain_lin
-    return img_nogain.astype(np.uint16)
 
 
 def find_dots(images):
@@ -222,8 +217,50 @@ def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'),
             cv2.imwrite(str(output_folder/experiment/Path(str(i) + '.png')), im)
 
 
+def remove_gain(img, gain_raw, tensor=False):
+    if not gain_raw: return img
+    gain_dB = 20 * np.log10(gain_raw / 32)
+    gain_lin = np.power(10, gain_dB/20)
+    img_nogain = img / gain_lin
+    if not tensor:
+        return img_nogain.astype(np.uint8)
+    else:
+        return img_nogain.type(torch.uint8)
+
+
+def set_gain(img, gain_raw, desired_gain_raw):
+    if gain_raw:
+        current_gain_dB = 20 * np.log10(gain_raw / 32)
+        current_gain_lin = np.power(10, current_gain_dB/20)
+        img = img / current_gain_lin
+
+    desired_gain_dB = 20 * np.log10(desired_gain_raw / 32)
+    desired_gain_lin = np.power(10, desired_gain_dB/20)
+    
+    img_with_gain = img * desired_gain_lin
+
+    return img_with_gain.astype(np.uint16)
+
+
+def set_gain_all(source_dir, target_dir, parameters="data/params.csv"):
+    experiments = os.listdir(source_dir)
+    params = pd.read_csv(parameters)["gain"]
+    for experiment in tqdm(experiments):
+        images = [read_img(a) for a in get_list_of_imgs(source_dir/experiment, type_regex="*.png")]
+        gain_raw = params[int(experiment) - 1]
+        images = [set_gain(x, gain_raw, 50) for x in images]
+        for image in images:
+            copy = image
+            copy[:, 2:] = image[:, :-2]
+            image = copy
+        os.mkdir(target_dir/experiment)
+        for i, im in enumerate(images):
+            im = np.clip(im, 0, 255).astype(np.uint8)
+            cv2.imwrite(str(target_dir/experiment/Path(str(i) + '.png')), im)
+
+
 def main():
-    prepare_data()
+    set_gain_all("data/with_gain", "data/50_gain")
 
 if __name__ == "__main__":
     main()
