@@ -75,7 +75,7 @@ def train(args, model=None):
     fing_y = int(8/(args.real_size[0]/args.image_height))
 
     # deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
-    deflection_MeV = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, pixel_in_mm_adjusted).to(device)
+    # deflection_MeV = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, pixel_in_mm_adjusted)[0].to(device)
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -92,38 +92,38 @@ def train(args, model=None):
                 settings = None
             predicted_noise = model(x_t, t, settings)
             loss1 = mse(noise, predicted_noise)
-            pred, _ = diffusion.noise_images(images, t, predicted_noise)
-            _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
-                                        args.electron_pointing_pixel, 
-                                        deflection_MeV, 
-                                        acquisition_time_ms=acq_time, 
-                                        resize=args.real_size,
-                                        image_gain=50,
-                                        device=device)
-            _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), 
-                                        args.electron_pointing_pixel, 
-                                        deflection_MeV, 
-                                        acquisition_time_ms=acq_time, 
-                                        resize=args.real_size,
-                                        image_gain=50,
-                                        device=device)
-            concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1)
-            max_val = torch.max(concatenated)
-            min_val = torch.min(concatenated)
-            x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
-            pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
-            pred_norm = (pred.clamp(-1, 1) + 1) / 2
-            pred_norm[:, :, :fing_y, :fing_x] = 0
-            phys_weight = sigmoid_schedule(t[0], max_steps=args.noise_steps)
-            loss2 = mse(x_t_spectr_norm, pred_spectr_norm)
-            loss3 = torch.mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device))
-            loss = loss1 + (loss2 + loss3) * phys_weight
+            # pred, _ = diffusion.noise_images(images, t, predicted_noise)
+            # _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
+            #                             args.electron_pointing_pixel, 
+            #                             deflection_MeV, 
+            #                             acquisition_time_ms=acq_time, 
+            #                             resize=args.real_size,
+            #                             image_gain=50,
+            #                             device=device)
+            # _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), 
+            #                             args.electron_pointing_pixel, 
+            #                             deflection_MeV, 
+            #                             acquisition_time_ms=acq_time, 
+            #                             resize=args.real_size,
+            #                             image_gain=50,
+            #                             device=device)
+            # concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1)
+            # max_val = torch.max(concatenated)
+            # min_val = torch.min(concatenated)
+            # x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
+            # pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
+            # pred_norm = (pred.clamp(-1, 1) + 1) / 2
+            # pred_norm[:, :, :fing_y, :fing_x] = 0
+            # phys_weight = sigmoid_schedule(t[0], max_steps=args.noise_steps)
+            # loss2 = mse(x_t_spectr_norm, pred_spectr_norm)
+            # loss3 = torch.mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device))
+            loss = loss1# + (loss2 + loss3) * phys_weight
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             ema.step_ema(ema_model, model)
             scheduler.step()
-            pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item()), "BASIC": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
+            pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item())})# , "BASIC": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
         if args.sample_freq and epoch % args.sample_freq == 0:# and epoch > 0:
@@ -145,7 +145,7 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "1st_gain50_physsched"
+    args.run_name = "850ns_nophys"
     args.epochs = 301
     args.noise_steps = 850
     args.physinf_thresh = args.noise_steps // 10 # original has // 10

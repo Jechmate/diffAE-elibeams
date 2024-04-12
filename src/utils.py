@@ -160,17 +160,12 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
     fig.subplots_adjust(hspace=0.35, wspace=0.15, top=0.98)
     if n == 1:
         axs = axs.reshape(1, -1)
-    # title = fig.suptitle(f"Energy: {energy} mJ, Pressure: {pressure} bar, Acquisition time: {acquisition_time_ms} ms, Model: {model}",  fontsize=16)
-    # title.set_position([0.5, 1])
-    deflection_MeV = deflection_biexp_calc(n, images.shape[-1], beam_point_x)[0].unsqueeze(0) # make it batched but of batchsize 1
-    # deflection_MeV = deflection_calc(1, images.shape[-1], beam_point_x)
+    deflection_MeV, deflection_MeV_dx = deflection_biexp_calc(n, images.shape[-1], beam_point_x)
+    deflection_MeV = deflection_MeV[0].unsqueeze(0) # make it batched but of batchsize 1
+    deflection_MeV_dx = deflection_MeV_dx[0].unsqueeze(0) # make it batched but of batchsize 1
     for i in range(n):
-        # im = images[i]#.unsqueeze(0)#.cpu().permute(1, 2, 0).numpy()
         im = images[i].unsqueeze(0).unsqueeze(0)
-        deflection_MeV, spectrum_calibrated = calc_spec(im/255, beam_point_x, deflection_MeV, torch.tensor(acquisition_time_ms), image_gain=gain, noise=noise)  # Using a local function
-        # deflection_MeV = deflection_MeV.squeeze()
-        # spectrum_calibrated = spectrum_calibrated.squeeze()
-        # Find ticks for the current image
+        deflection_MeV, spectrum_calibrated = calc_spec(im/255, beam_point_x, deflection_MeV, torch.tensor(acquisition_time_ms), image_gain=gain, noise=noise, deflection_MeV_dx=deflection_MeV_dx)  # Using a local function
         ticks = find_ticks(deflection_MeV.squeeze().cpu(), beam_point_x, beam_point_y, pixel_in_mrad, energy_levels, ranges)
         # Plot the spectrum
         axs[i, 1].plot(deflection_MeV.squeeze().cpu(), spectrum_calibrated.squeeze().cpu())
@@ -295,11 +290,13 @@ def deflection_biexp_calc(batch_size, hor_image_size, electron_pointing_pixel, p
     deflection_mm = deflection_mm.repeat(batch_size, 1)
     mask = deflection_mm > 1
     deflection_MeV = torch.zeros_like(deflection_mm)
+    deflection_MeV_dx = torch.zeros_like(deflection_mm)
     deflection_MeV[mask] = bi_exponential_deflection(deflection_mm[mask]).to(torch.float32)
-    return deflection_MeV
+    deflection_MeV_dx[mask] = bi_exponential_deflection_dx(deflection_mm[mask]).to(torch.float32)
+    return deflection_MeV, deflection_MeV_dx
 
 
-def calc_spec(image, electron_pointing_pixel, deflection_MeV, acquisition_time_ms, image_gain=0, resize=None, noise=False, device='cpu', function_fit=True):
+def calc_spec(image, electron_pointing_pixel, deflection_MeV, acquisition_time_ms, image_gain=0, resize=None, noise=False, device='cpu', deflection_MeV_dx=None):
     if resize:
         image = f.resize(image, resize, antialias=True)
     image_gain /= 32 # correction for CCD settings
@@ -319,7 +316,12 @@ def calc_spec(image, electron_pointing_pixel, deflection_MeV, acquisition_time_m
     for j in range(electron_pointing_pixel, hor_image_size):
         spectrum_in_pixel[:, j] = horizontal_profile[:,j]
         with torch.no_grad():
-            derivative = deflection_MeV[:, j-1] - deflection_MeV[:, j] if not function_fit else bi_exponential_deflection_dx(torch.Tensor([j]).expand(batch_size))
+            derivative = deflection_MeV[:, j-1] - deflection_MeV[:, j] if deflection_MeV_dx is None else -deflection_MeV_dx[:, j] # 
+            # print("Diff:", -deflection_MeV_dx[:, j] - deflection_MeV[:, j-1] + deflection_MeV[:, j])
+            print("Ratio:", -deflection_MeV_dx[:, j] / (deflection_MeV[:, j-1] - deflection_MeV[:, j]))
+            # print("Continuous:", -deflection_MeV_dx[:, j])
+            # print(deflection_MeV[:, j-1] - deflection_MeV[:, j])
+            # print(-deflection_MeV_dx[:, j])
             derivative = derivative.to(device)
             mask = derivative != 0
             spectrum_in_MeV[mask, j] = spectrum_in_pixel[mask, j] / derivative
