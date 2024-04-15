@@ -316,15 +316,17 @@ def calc_spec(image, electron_pointing_pixel, deflection_MeV, acquisition_time_m
     for j in range(electron_pointing_pixel, hor_image_size):
         spectrum_in_pixel[:, j] = horizontal_profile[:,j]
         with torch.no_grad():
-            derivative = deflection_MeV[:, j-1] - deflection_MeV[:, j] if deflection_MeV_dx is None else -deflection_MeV_dx[:, j] # 
             # print("Diff:", -deflection_MeV_dx[:, j] - deflection_MeV[:, j-1] + deflection_MeV[:, j])
-            print("Ratio:", -deflection_MeV_dx[:, j] / (deflection_MeV[:, j-1] - deflection_MeV[:, j]))
+            # print("Ratio:", -deflection_MeV_dx[:, j] / (deflection_MeV[:, j-1] - deflection_MeV[:, j]))
             # print("Continuous:", -deflection_MeV_dx[:, j])
             # print(deflection_MeV[:, j-1] - deflection_MeV[:, j])
             # print(-deflection_MeV_dx[:, j])
+            derivative = deflection_MeV[:, j-1] - deflection_MeV[:, j] if deflection_MeV_dx is None else -deflection_MeV_dx[:, j] # 
             derivative = derivative.to(device)
             mask = derivative != 0
-            spectrum_in_MeV[mask, j] = spectrum_in_pixel[mask, j] / derivative
+            # print(spectrum_in_pixel.size())
+            # print(derivative.size())
+            spectrum_in_MeV[mask, j] = spectrum_in_pixel[mask, j] / derivative[mask]
             spectrum_in_MeV[~torch.isfinite(spectrum_in_MeV)] = 0
 
     acquisition_time_ms = acquisition_time_ms.reshape(batch_size, 1).repeat(1, hor_image_size).to(device)

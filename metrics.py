@@ -112,15 +112,18 @@ def sample_all(root="models", result_dir="results/transfer_withgain_512_valid", 
             model.eval()
         diffusion = SpacedDiffusion(beta_start=1e-4, beta_end=0.02, section_counts=section_counts, noise_steps=ns, img_width=128, img_height=64, device=device)
         y = torch.Tensor([E,P,ms]).to(device).float().unsqueeze(0) # parameter vector
-        total = 0
-        while total != original_size:
+        res_path = os.path.join(result_dir, str(exp_number))
+        os.makedirs(res_path, exist_ok=True)
+        total = len([f for f in os.listdir(res_path) if f.endswith('.png')])
+        while total < original_size:
             if total + n > original_size:
                 add = original_size - total
             else:
                 add = n
             x = diffusion.ddim_sample_loop(model, y, cfg_scale=cfg_scale, resize=[256, 512], n=add, eta=1, device=device, gain=50)
+            if len(x.shape) == 2:
+                x = x.unsqueeze(0)
             res_path = os.path.join(result_dir, str(exp_number))
-            os.makedirs(res_path, exist_ok=True)
             save_samples(x, res_path, start_index=total)
             total += add
 
@@ -130,7 +133,7 @@ def main(validate_on = []):
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
     args.epochs = 301
-    args.noise_steps = 850
+    args.noise_steps = 1000
     args.physinf_thresh = args.noise_steps // 10 # original has // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
@@ -141,7 +144,7 @@ def main(validate_on = []):
     args.features = ["E","P","ms"]
     args.dataset_path = r"data/gain50"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:3"
+    args.device = "cuda:2"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
@@ -159,7 +162,7 @@ def main(validate_on = []):
 
     for experiment in sorted(experiments, key=lambda x: int(x)):
         args.exclude = [os.path.join(args.dataset_path, experiment)]
-        args.run_name = "valid_nophys_850_" + experiment
+        args.run_name = "valid_nophys_1000_bs4_" + experiment
         row = settings.loc[[int(experiment) - 1], args.features]
         args.sample_settings = row.values.tolist()[0]
 
@@ -172,18 +175,18 @@ def main(validate_on = []):
 
 if __name__ == "__main__":
     main(validate_on=['3', '8', '11', '19', '21'])
-    # # validate on: 3, 8, 11, 19, 21
-    # device = "cuda:0"
-    # model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=device).to(device)
-    # ckpt = torch.load('models/nophys_850steps/ema_ckpt.pt', map_location=device)
-    # model.load_state_dict(ckpt)
-    # model.eval()
-    # name = 'valid_noscaleloss3_850'
+    # validate on: 3, 8, 11, 19, 21
+    # device = "cuda:1"
+    # # model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=device).to(device)
+    # # ckpt = torch.load('models/nophys_850steps/ema_ckpt.pt', map_location=device)
+    # # model.load_state_dict(ckpt)
+    # # model.eval()
+    # name = 'valid_physsched_850'
     # cfg = 1
     # section_counts = [2, 2, 2, 2, 2, 2, 2, 2, 2, 7]
     # sample_all(load_model=True, root="models/" + name,
     #             result_dir='results/' + name + '_sec' + '18plus7' + '_cfg' + str(cfg),
-    #             device=device, ns=850, section_counts=section_counts, n=20, cfg_scale=cfg)
+    #             device=device, ns=850, section_counts=section_counts, n=16, cfg_scale=cfg)
     # cfg_values = [1, 3, 5, 6, 7]
     # section_counts_list = [
     #     [15],
@@ -229,3 +232,11 @@ if __name__ == "__main__":
 # Maximum FID: 197.45190346779944 (in subdirectory 8)
 # Minimum FID: 74.58281204934039 (in subdirectory 3)
 # Variance of FID: 2162.74495532811917761544
+
+
+# physsched_850
+
+
+# valid_nophys_1000_bs4_ on eli3
+# valid_phys_1000_bs4_ on eli2
+# valid_phys_850_bs4 on eli

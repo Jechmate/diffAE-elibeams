@@ -29,9 +29,19 @@ def sigmoid_loss(x: torch.Tensor, el_pointing=64, pixel_in_mm=0.137, device='cpu
     sig = sigmoid(distance).to(device)
     return x*sig
 
+
 def sigmoid_schedule(step, max_steps=850, k=0.08):
     x_0 = max_steps/10
     return 20 - (20 / (1 + torch.exp(-k * (step - x_0))))
+
+
+
+def weighted_mse_loss(input, target, weight):
+        return (weight * (input - target) ** 2).mean()
+
+
+def weighted_mean(input, weight):
+    return (weight * input).mean()
 
 
 def train(args, model=None):
@@ -75,7 +85,7 @@ def train(args, model=None):
     fing_y = int(8/(args.real_size[0]/args.image_height))
 
     # deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
-    # deflection_MeV = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, pixel_in_mm_adjusted)[0].to(device)
+    deflection_MeV = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, pixel_in_mm_adjusted)[0].to(device)
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -84,7 +94,7 @@ def train(args, model=None):
             images = data['image'].to(device)
             settings = data['settings'].to(device)
             acq_time = settings[:, 2]
-            t = diffusion.sample_timesteps(images.shape[0], all_same=True).to(device)
+            t = diffusion.sample_timesteps(images.shape[0], all_same=False).to(device)
             x_t, noise = diffusion.noise_images(images, t)
             if epoch == 0 and i == 0:
                 summary(model, x_t, t, settings, device=device)
@@ -114,16 +124,16 @@ def train(args, model=None):
             # pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
             # pred_norm = (pred.clamp(-1, 1) + 1) / 2
             # pred_norm[:, :, :fing_y, :fing_x] = 0
-            # phys_weight = sigmoid_schedule(t[0], max_steps=args.noise_steps)
-            # loss2 = mse(x_t_spectr_norm, pred_spectr_norm)
-            # loss3 = torch.mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device))
-            loss = loss1# + (loss2 + loss3) * phys_weight
+            # phys_weight = sigmoid_schedule(t, max_steps=args.noise_steps).unsqueeze(1).unsqueeze(2)
+            # loss2 = weighted_mse_loss(x_t_spectr_norm, pred_spectr_norm, phys_weight)
+            # loss3 = weighted_mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device), phys_weight)
+            loss = loss1# + loss2 + loss3
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             ema.step_ema(ema_model, model)
             scheduler.step()
-            pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item())})# , "BASIC": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
+            pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item())})#, "BASIC": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
         if args.sample_freq and epoch % args.sample_freq == 0:# and epoch > 0:
@@ -145,20 +155,20 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "850ns_nophys"
+    args.run_name = "test"
     args.epochs = 301
     args.noise_steps = 850
     args.physinf_thresh = args.noise_steps // 10 # original has // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
-    args.batch_size = 6
+    args.batch_size = 2
     args.image_height = 64
     args.image_width = 128
     args.real_size = (256, 512)
     args.features = ["E","P","ms"]
     args.dataset_path = r"data/gain50"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:2"
+    args.device = "cuda:0"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
