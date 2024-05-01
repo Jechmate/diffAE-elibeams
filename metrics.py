@@ -15,6 +15,53 @@ from src.dataset import get_1d
 from torch.nn.functional import mse_loss, normalize
 from dtaidistance import dtw
 from pytorch_msssim import ssim
+import csv
+import subprocess
+
+def sigmoid_schedule(step, max_steps=1000, k=0.9):
+    x_0 = max_steps/10
+    scale = 1 # previous verisons had 10
+    return scale - (scale / (1 + torch.exp(-k * (step - x_0))))
+
+
+def create_sigmoid_list(length, total_sum):
+    # Ensure that there's enough total sum to give at least 1 to each element
+    assert total_sum >= length, "Total sum must be at least equal to the length of the list"
+
+    # Generate sigmoid values across the specified range in ascending order
+    sigmoid_values = torch.tensor([sigmoid_schedule(torch.tensor(i), max_steps=length, k=0.9) for i in range(1, length + 1)])
+
+    # Normalize these sigmoid values so that their sum is 1
+    normalized_sigmoid_values = sigmoid_values / torch.sum(sigmoid_values)
+
+    # Calculate the sum available after assigning 1 to each element
+    available_sum = total_sum - length
+
+    # Scale these normalized values to the available sum
+    scaled_sigmoid_values = normalized_sigmoid_values * available_sum
+
+    # Start each element with 1 and add the scaled sigmoid values, then round
+    integer_list = (torch.ones(length) + scaled_sigmoid_values).int().tolist()
+
+    # Correct any discrepancies in sum due to rounding
+    current_sum = sum(integer_list)
+    difference = total_sum - current_sum
+    
+    # Adjust by adding/subtracting 1 to elements until the sum is correct
+    if difference != 0:
+        sign = int(difference / abs(difference))  # Determine if we need to add or subtract
+        indices = list(range(length))
+        torch.randperm(len(indices)).tolist()  # Shuffle indices for fairness in adjustment
+
+        for i in indices:
+            if difference == 0:
+                break
+            integer_list[i] += sign
+            difference -= sign
+    
+    # Since the sigmoid values were generated in ascending order, we can ensure the output list is also sorted
+    return sorted(integer_list)
+
 
 class weighted_MSELoss(nn.Module):
     def __init__ (self):
@@ -134,7 +181,8 @@ def main(validate_on = []):
     args = parser.parse_args()
     args.epochs = 301
     args.noise_steps = 1000
-    args.physinf_thresh = args.noise_steps // 10 # original has // 10
+    args.phys = True
+    args.physinf_thresh = args.noise_steps // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
     args.batch_size = 4
@@ -142,16 +190,16 @@ def main(validate_on = []):
     args.image_width = 128
     args.real_size = (256, 512)
     args.features = ["E","P","ms"]
-    args.dataset_path = r"data/gain50"
+    args.dataset_path = r"data/with_gain"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:2"
+    args.device = "cuda:1"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
     args.sample_freq = 0
-    args.sample_settings = [13.,15.,20.]
+    args.sample_settings = [32.,15.,15.]
     args.sample_size = 8
-    args.electron_pointing_pixel = 64
+    args.electron_pointing_pixel = 62
 
     settings = pd.read_csv(args.csv_path, engine='python')[args.features]
 
@@ -162,7 +210,7 @@ def main(validate_on = []):
 
     for experiment in sorted(experiments, key=lambda x: int(x)):
         args.exclude = [os.path.join(args.dataset_path, experiment)]
-        args.run_name = "valid_nophys_1000_bs4_" + experiment
+        args.run_name = "valid_gaindata_cosinesched_" + experiment
         row = settings.loc[[int(experiment) - 1], args.features]
         args.sample_settings = row.values.tolist()[0]
 
@@ -173,51 +221,69 @@ def main(validate_on = []):
 # [1, 1, 1, 1, 1, 1, 1, 1, 1, 6] 1x9plus6
 # [2, 2, 2, 2, 2, 2, 2, 2, 2, 7] 2x9plus7
 
+def sample_loop():
+    device = 'cuda:1'
+    names = ['valid_gaindata_physsmall']
+    # section_counts_options = [[15], [20], [25], [1, 1, 1, 1, 1, 1, 1, 1, 1, 6], [1, 1, 1, 1, 1, 1, 2, 2, 3, 3, 4], [2, 2, 2, 2, 2, 2, 2, 2, 2, 7]]
+    section_counts_options = [[10], create_sigmoid_list(10, 10), [30], create_sigmoid_list(10, 30), [100], create_sigmoid_list(10, 100)]#, [200], create_sigmoid_list(10, 200)]
+    section_names = ['10', 'sig10', '30', 'sig30', '100', 'sig100']#, '200', 'sig200']
+
+    for name in names:
+        for cfg in range(1, 9):  # Loop through cfg values 1 to 8
+            for section_counts, section_str in zip(section_counts_options, section_names):
+                # Construct the result directory path
+                result_dir = f'results_smallphys/{name}_sec{section_str}_cfg{cfg}'
+
+                # Check if the directory already exists
+                if os.path.exists(result_dir):
+                    print(f"Directory {result_dir} already exists. Skipping...")
+                    continue  # Skip the current iteration if the directory exists
+
+                # If the directory does not exist, perform the function call
+                print(f"Processing with cfg={cfg} and section_counts={section_counts}")
+                sample_all(load_model=True, root="models/" + name,
+                        result_dir=result_dir,
+                        device=device, ns=1000, section_counts=section_counts, n=10, cfg_scale=cfg)
+
+def metrics_loop(dir1, dir2, csv_path, start=1, end=22):
+    with open(csv_path, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Physics', 'Sections', 'CFG', 'mse', 'var_diff', 'FID'])
+    for dir in tqdm(os.listdir(dir2)):
+        running_mse = 0
+        running_var_diff = 0
+        running_fid = 0
+        count = 0
+        physics = dir.split('_')[2]
+        sections = dir.split('_')[-2]
+        cfg = dir.split('_cfg')[-1]
+        for i in range(start, end + 1):
+            subdir1 = os.path.join(dir1, str(i))
+            subdir2 = os.path.join(dir2, dir, str(i))
+            if os.path.isdir(subdir1) and os.path.isdir(subdir2):
+                output = subprocess.check_output(['python', '-m', 'pytorch_fid', '--device', 'cuda:1', subdir1, subdir2])
+                output_str = output.decode('utf-8').strip()
+                fid = float(output_str.split()[-1])
+                results, _ = compare_spectra(subdir1, subdir2, i) # ['mse'], ['var_diff']
+                running_mse += results['mse'].item()
+                running_var_diff += results['var_diff'].item()
+                running_fid += fid
+                count += 1
+
+        with open(csv_path, 'a', newline='') as file:
+            mse = running_mse / count
+            var_diff = running_var_diff / count
+            fid = running_fid / count
+            writer = csv.writer(file)
+            writer.writerow([physics, sections, cfg, mse, var_diff, fid])
+
+
 if __name__ == "__main__":
     main(validate_on=['3', '8', '11', '19', '21'])
+    # metrics_loop('data/with_gain', 'results_smallphys', 'metrics_smallphys.csv')
+    # sample_loop()
     # validate on: 3, 8, 11, 19, 21
-    # device = "cuda:1"
-    # # model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=device).to(device)
-    # # ckpt = torch.load('models/nophys_850steps/ema_ckpt.pt', map_location=device)
-    # # model.load_state_dict(ckpt)
-    # # model.eval()
-    # name = 'valid_physsched_850'
-    # cfg = 1
-    # section_counts = [2, 2, 2, 2, 2, 2, 2, 2, 2, 7]
-    # sample_all(load_model=True, root="models/" + name,
-    #             result_dir='results/' + name + '_sec' + '18plus7' + '_cfg' + str(cfg),
-    #             device=device, ns=850, section_counts=section_counts, n=16, cfg_scale=cfg)
-    # cfg_values = [1, 3, 5, 6, 7]
-    # section_counts_list = [
-    #     [15],
-    #     [25],
-    #     [45],
-    #     [1, 1, 1, 1, 1, 1, 1, 1, 1, 6],
-    #     [2, 2, 2, 2, 2, 2, 2, 2, 2, 7]
-    # ]
-# 
-    # for cfg in cfg_values:
-    #     for section_counts in section_counts_list:
-    #         # Determine the section_count string representation
-    #         if len(section_counts) == 1:
-    #             section_count_str = str(section_counts[0])
-    #         elif section_counts[-1] == 6:
-    #             section_count_str = "9plus6"
-    #         elif section_counts[-1] == 7:
-    #             section_count_str = "18plus7"
-    #         else:
-    #             section_count_str = "custom"
-    #         result_dir = f'results/{name}_sec{section_count_str}_cfg{cfg}'
-    #         sample_all(
-    #             load_model=True,
-    #             root=f"models/{name}",
-    #             result_dir=result_dir,
-    #             device=device,
-    #             ns=700,
-    #             section_counts=section_counts,
-    #             n=25,
-    #             cfg_scale=cfg
-    #         )
+
 
 # not with uniform 50 gain
 # results/valid_1st_sig_beamloss_sec18plus7_cfg1
@@ -237,6 +303,35 @@ if __name__ == "__main__":
 # physsched_850
 
 
-# valid_nophys_1000_bs4_ on eli3
-# valid_phys_1000_bs4_ on eli2
-# valid_phys_850_bs4 on eli
+# valid_nophys_1000_bs4 on eli3
+# valid_phys_1000_bs4 on eli
+
+
+# results/valid_nophys_1000_sec18plus7_cfg1
+# Average FID: 110.47039075060582400000
+# Maximum FID: 213.4397542836504 (in subdirectory 8)
+# Minimum FID: 68.37230248143794 (in subdirectory 11)
+# Variance of FID: 3578.60023592921412100893
+
+
+# results/valid_phys_1000_sec18plus7_cfg1
+# Average FID: 102.33986761891096800000
+# Maximum FID: 191.09165479807083 (in subdirectory 8)
+# Minimum FID: 64.18687411927567 (in subdirectory 11)
+# Variance of FID: 2705.94666780461800263923
+
+
+# results/valid_nophys_1000_sec25_cfg1
+# Average FID: 113.30429335882807400000
+# Maximum FID: 198.07268846752592 (in subdirectory 8)
+# Minimum FID: 77.10297611028923 (in subdirectory 11)
+# Variance of FID: 2496.51411858448906128175
+
+
+# results/valid_phys_1000_sec25_cfg1
+# Average FID: 108.64733373426627400000
+# Maximum FID: 204.45441029918587 (in subdirectory 8)
+# Minimum FID: 69.0003816122501 (in subdirectory 3)
+# Variance of FID: 3203.55807462579091349672
+
+

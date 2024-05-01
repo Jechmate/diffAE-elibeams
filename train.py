@@ -30,10 +30,15 @@ def sigmoid_loss(x: torch.Tensor, el_pointing=64, pixel_in_mm=0.137, device='cpu
     return x*sig
 
 
-def sigmoid_schedule(step, max_steps=850, k=0.08):
-    x_0 = max_steps/10
-    return 20 - (20 / (1 + torch.exp(-k * (step - x_0))))
+def sigmoid_schedule(step, max_steps=1000, k=0.9):
+    x_0 = max_steps/12
+    scale = 1 # previous verisons had 10
+    return scale - (scale / (1 + torch.exp(-k * (step - x_0))))
 
+
+def cosine_step_schedule(step, max_steps=1000):
+    t = step / max_steps
+    return 0.5 * (1 + torch.cos(t * torch.pi))
 
 
 def weighted_mse_loss(input, target, weight):
@@ -81,11 +86,13 @@ def train(args, model=None):
 
     el_pointing_adjusted = int(args.electron_pointing_pixel/(args.real_size[1]/args.image_width))
     pixel_in_mm_adjusted = 0.137*(args.real_size[1]/args.image_width)
-    fing_x = int(10/(args.real_size[1]/args.image_width))
+    fing_x = int(8/(args.real_size[1]/args.image_width))
     fing_y = int(8/(args.real_size[0]/args.image_height))
 
     # deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
-    deflection_MeV = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, pixel_in_mm_adjusted)[0].to(device)
+    deflection_MeV, deflection_MeV_dx = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, pixel_in_mm_adjusted)
+    deflection_MeV = deflection_MeV.to(device)
+    deflection_MeV_dx = deflection_MeV_dx.to(device)
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -96,44 +103,61 @@ def train(args, model=None):
             acq_time = settings[:, 2]
             t = diffusion.sample_timesteps(images.shape[0], all_same=False).to(device)
             x_t, noise = diffusion.noise_images(images, t)
-            if epoch == 0 and i == 0:
-                summary(model, x_t, t, settings, device=device)
+            # if epoch == 0 and i == 0:
+                # summary(model, x_t, t, settings, device=device)
             if np.random.random() < 0.1:
                 settings = None
             predicted_noise = model(x_t, t, settings)
             loss1 = mse(noise, predicted_noise)
-            # pred, _ = diffusion.noise_images(images, t, predicted_noise)
-            # _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
-            #                             args.electron_pointing_pixel, 
-            #                             deflection_MeV, 
-            #                             acquisition_time_ms=acq_time, 
-            #                             resize=args.real_size,
-            #                             image_gain=50,
-            #                             device=device)
-            # _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), 
-            #                             args.electron_pointing_pixel, 
-            #                             deflection_MeV, 
-            #                             acquisition_time_ms=acq_time, 
-            #                             resize=args.real_size,
-            #                             image_gain=50,
-            #                             device=device)
-            # concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1)
-            # max_val = torch.max(concatenated)
-            # min_val = torch.min(concatenated)
-            # x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
-            # pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
-            # pred_norm = (pred.clamp(-1, 1) + 1) / 2
-            # pred_norm[:, :, :fing_y, :fing_x] = 0
-            # phys_weight = sigmoid_schedule(t, max_steps=args.noise_steps).unsqueeze(1).unsqueeze(2)
-            # loss2 = weighted_mse_loss(x_t_spectr_norm, pred_spectr_norm, phys_weight)
-            # loss3 = weighted_mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device), phys_weight)
-            loss = loss1# + loss2 + loss3
+            mask = (t < args.physinf_thresh)
+            comp_factor = mask.float().mean()
+            if args.phys:
+            # if mask.any():
+                pred, _ = diffusion.noise_images(images, t, predicted_noise)
+                _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
+                                            args.electron_pointing_pixel, 
+                                            deflection_MeV, 
+                                            acquisition_time_ms=acq_time, 
+                                            resize=args.real_size,
+                                            image_gain=0,
+                                            device=device,
+                                            deflection_MeV_dx=deflection_MeV_dx)
+                _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), 
+                                            args.electron_pointing_pixel, 
+                                            deflection_MeV, 
+                                            acquisition_time_ms=acq_time, 
+                                            resize=args.real_size,
+                                            image_gain=0,
+                                            device=device,
+                                            deflection_MeV_dx=deflection_MeV_dx)
+                concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1)
+                max_val = torch.max(concatenated)
+                min_val = torch.min(concatenated)
+                x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
+                pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
+                pred_norm = (pred.clamp(-1, 1) + 1) / 2
+                pred_norm[:, :, :fing_y, :fing_x] = 0
+                phys_weight = cosine_step_schedule(t, max_steps=args.noise_steps).unsqueeze(1).unsqueeze(2)
+                loss2 = weighted_mse_loss(x_t_spectr_norm, pred_spectr_norm, phys_weight * 10)
+                loss3 = weighted_mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device), phys_weight)
+                # loss2 = mse(x_t_spectr_norm, pred_spectr_norm) * 10
+                # loss3 = sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device).mean(dim=(0, -2, -1))
+                # loss2 *= comp_factor
+                # loss3 *= comp_factor
+                loss = loss1 + loss2 + loss3
+            else:
+                loss = loss1
+                loss2 = torch.Tensor([0])
+                loss3 = torch.Tensor([0])
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             ema.step_ema(ema_model, model)
             scheduler.step()
-            pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item())})#, "BASIC": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
+            if args.phys:
+                pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item()), "BASIC": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
+            else:
+                pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item())})
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
         if args.sample_freq and epoch % args.sample_freq == 0:# and epoch > 0:
@@ -155,25 +179,26 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "test"
+    args.run_name = "x0nsdiv2_k01_fix"
     args.epochs = 301
-    args.noise_steps = 850
-    args.physinf_thresh = args.noise_steps // 10 # original has // 10
+    args.noise_steps = 1000
+    args.phys = True
+    args.physinf_thresh = args.noise_steps // 10
     args.beta_start = 1e-4
     args.beta_end = 0.02
-    args.batch_size = 2
+    args.batch_size = 4
     args.image_height = 64
     args.image_width = 128
     args.real_size = (256, 512)
     args.features = ["E","P","ms"]
     args.dataset_path = r"data/gain50"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:0"
+    args.device = "cuda:1"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
     args.sample_freq = 0
-    args.sample_settings = [13.,15.,20.]
+    args.sample_settings = [32.,15.,15.]
     args.sample_size = 8
     args.electron_pointing_pixel = 64
 

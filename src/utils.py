@@ -259,21 +259,21 @@ def deflection_calc(batch_size, hor_image_size, electron_pointing_pixel):
     deflection_mm = torch.zeros((batch_size, hor_image_size))
     mat = scipy.io.loadmat('data/Deflection_curve_Mixture_Feb28.mat')
     for i in range(hor_image_size):
-        if i <= electron_pointing_pixel:
-            deflection_mm[:, i] = 0
-        else:
-            deflection_mm[:, i] = (i - electron_pointing_pixel) * pixel_in_mm
+        # if i <= electron_pointing_pixel:
+        #     deflection_mm[:, i] = 0
+        # else:
+        deflection_mm[:, i] = (i - electron_pointing_pixel) * pixel_in_mm
             
     for i in range(electron_pointing_pixel, hor_image_size):
         xq = deflection_mm[:, i]
-        mask = xq > 1
+        mask = xq > 0
         if mask.any():
             deflection_MeV[mask, i] = torch.from_numpy(scipy.interpolate.interp1d(mat['deflection_curve_mm'][:, 0],
                                                            mat['deflection_curve_MeV'][:, 0],
                                                            kind='linear',
                                                            assume_sorted=False,
                                                            bounds_error=False)(xq[mask]).astype(np.float32))
-    return deflection_MeV
+    return deflection_MeV#[:][electron_pointing_pixel:]
 
 
 def bi_exponential_deflection(x, a1=77.855568601465, b1=0.466485822903793, a2=19.911755340829, b2=0.043573073167125255):
@@ -285,50 +285,78 @@ def bi_exponential_deflection_dx(x, a1=-36.318518986697, b1=0.466485822903793, a
 
 def deflection_biexp_calc(batch_size, hor_image_size, electron_pointing_pixel, pixel_in_mm=0.137):
     linear_space = torch.arange(hor_image_size) * pixel_in_mm
-    linear_space -= electron_pointing_pixel * pixel_in_mm
-    deflection_mm = linear_space.clamp(min=0)
-    deflection_mm = deflection_mm.repeat(batch_size, 1)
-    mask = deflection_mm > 1
-    deflection_MeV = torch.zeros_like(deflection_mm)
-    deflection_MeV_dx = torch.zeros_like(deflection_mm)
-    deflection_MeV[mask] = bi_exponential_deflection(deflection_mm[mask]).to(torch.float32)
-    deflection_MeV_dx[mask] = bi_exponential_deflection_dx(deflection_mm[mask]).to(torch.float32)
+    linear_space = linear_space.repeat(batch_size, 1)
+    deflection_MeV = bi_exponential_deflection(linear_space).to(torch.float32)
+    zeros = torch.zeros(batch_size, 75) # 64 is el_pointing, 11 are nans, therefore 75
+
+    # Concatenate zeros to the beginning of each tensor in the batch
+    deflection_MeV = torch.cat((zeros, deflection_MeV), dim=1)
+
+    # Slice the concatenated tensor to keep only the first 512 elements in each tensor
+    deflection_MeV = deflection_MeV[:, :512]
+    deflection_MeV_dx = bi_exponential_deflection_dx(linear_space).to(torch.float32)
+    deflection_MeV_dx = torch.cat((zeros, deflection_MeV_dx), dim=1)
+    deflection_MeV_dx = deflection_MeV_dx[:, :512]
     return deflection_MeV, deflection_MeV_dx
 
 
 def calc_spec(image, electron_pointing_pixel, deflection_MeV, acquisition_time_ms, image_gain=0, resize=None, noise=False, device='cpu', deflection_MeV_dx=None):
     if resize:
         image = f.resize(image, resize, antialias=True)
-    image_gain /= 32 # correction for CCD settings
+    image_gain /= 32  # correction for CCD settings
     if noise:
-        noise = torch.median(torch.stack([image[:, :, int(image.shape[1]*0.9), int(image.shape[2]*0.05)],
-                        image[:, :, int(image.shape[1]*0.9), int(image.shape[2]*0.9)],
-                        image[:, :, int(image.shape[1]*0.1), int(image.shape[2]*0.9)]], dim=0), dim=(1, 2))
+        noise = torch.median(torch.stack([
+            image[:, :, int(image.shape[1] * 0.9), int(image.shape[2] * 0.05)],
+            image[:, :, int(image.shape[1] * 0.9), int(image.shape[2] * 0.9)],
+            image[:, :, int(image.shape[1] * 0.1), int(image.shape[2] * 0.9)]
+        ], dim=0), dim=(1, 2))
         noise = noise.unsqueeze(1).unsqueeze(2)
         image[image <= noise] = 0
-    # acquisition_time_ms = 10
+
     hor_image_size = image.shape[-1]
     batch_size = image.shape[0]
-    horizontal_profile = torch.sum(image, dim=(1, 2)).to(device)  # for plotting maybe dim=(1) works?
+    horizontal_profile = torch.sum(image, dim=(1, 2)).to(device)
+
     spectrum_in_pixel = torch.zeros((batch_size, hor_image_size)).to(device)
     spectrum_in_MeV = torch.zeros((batch_size, hor_image_size)).to(device)
-            
-    for j in range(electron_pointing_pixel, hor_image_size):
-        spectrum_in_pixel[:, j] = horizontal_profile[:,j]
-        with torch.no_grad():
-            # print("Diff:", -deflection_MeV_dx[:, j] - deflection_MeV[:, j-1] + deflection_MeV[:, j])
-            # print("Ratio:", -deflection_MeV_dx[:, j] / (deflection_MeV[:, j-1] - deflection_MeV[:, j]))
-            # print("Continuous:", -deflection_MeV_dx[:, j])
-            # print(deflection_MeV[:, j-1] - deflection_MeV[:, j])
-            # print(-deflection_MeV_dx[:, j])
-            derivative = deflection_MeV[:, j-1] - deflection_MeV[:, j] if deflection_MeV_dx is None else -deflection_MeV_dx[:, j] # 
-            derivative = derivative.to(device)
-            mask = derivative != 0
-            # print(spectrum_in_pixel.size())
-            # print(derivative.size())
-            spectrum_in_MeV[mask, j] = spectrum_in_pixel[mask, j] / derivative[mask]
-            spectrum_in_MeV[~torch.isfinite(spectrum_in_MeV)] = 0
+
+    # Fill spectrum_in_pixel for all pixels at once
+    spectrum_in_pixel[:, electron_pointing_pixel:] = horizontal_profile[:, electron_pointing_pixel:]
+    pad = torch.zeros_like(deflection_MeV[:, :1])
+    # Compute the derivative array
+    if deflection_MeV_dx is None:
+        shifts = -1
+        deflection_MeV_shifted = torch.roll(deflection_MeV, shifts=shifts, dims=1)
+
+        # Pad with zeros where necessary
+        if shifts < 0:
+            # For left shift, zero pad on the right
+            pad = torch.zeros_like(deflection_MeV[:, -shifts:])  # Creating a padding tensor
+            deflection_MeV_shifted[:, -shifts:] = pad
+        else:
+            # For right shift, zero pad on the left
+            pad = torch.zeros_like(deflection_MeV[:, :shifts])  # Creating a padding tensor
+            deflection_MeV_shifted[:, :shifts] = pad
+
+        # Calculate derivative
+        derivative = deflection_MeV - deflection_MeV_shifted
+    else:
+        derivative = -deflection_MeV_dx[:, electron_pointing_pixel:]
+
+    derivative = derivative.to(device)
+    mask = derivative != 0
+    if deflection_MeV_dx is not None:
+        derivative_expanded = derivative.expand_as(spectrum_in_pixel[:, electron_pointing_pixel:])
+        spectrum_in_MeV[:, electron_pointing_pixel:][mask] = spectrum_in_pixel[:, electron_pointing_pixel:][mask] / derivative_expanded[mask]
+    else:
+        derivative_expanded = derivative# .expand_as(spectrum_in_pixel)
+        spectrum_in_MeV[:, :][mask] = spectrum_in_pixel[:, :][mask] / derivative_expanded[mask]
+    # Calculate the spectrum in MeV, avoiding division by zero
+    # spectrum_in_MeV[:, :][mask] = spectrum_in_pixel[:, :][mask] / derivative_expanded[mask]
+
+    spectrum_in_MeV[~torch.isfinite(spectrum_in_MeV)] = 0
 
     acquisition_time_ms = acquisition_time_ms.reshape(batch_size, 1).repeat(1, hor_image_size).to(device)
-    spectrum_calibrated = (spectrum_in_MeV * 3.706) / (acquisition_time_ms*image_gain) if image_gain else (spectrum_in_MeV * 3.706) / acquisition_time_ms
+    spectrum_calibrated = (spectrum_in_MeV * 3.706) / (acquisition_time_ms * image_gain) if image_gain else (spectrum_in_MeV * 3.706) / acquisition_time_ms
+
     return deflection_MeV, spectrum_calibrated
