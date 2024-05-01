@@ -61,6 +61,20 @@ def preprocess_image(img):
 # srcs: https://docs.baslerweb.com/gain, https://www.quora.com/What-is-the-formula-for-converting-decibels-to-linear-units
 
 
+def set_gain(img, gain_raw, desired_gain_raw):
+    if gain_raw:
+        current_gain_dB = 20 * np.log10(gain_raw / 32)
+        current_gain_lin = np.power(10, current_gain_dB/10)
+        img = img / current_gain_lin
+
+    desired_gain_dB = 20 * np.log10(desired_gain_raw / 32)
+    desired_gain_lin = np.power(10, desired_gain_dB/10)
+    
+    img_with_gain = img * desired_gain_lin
+
+    return img_with_gain.astype(np.uint16)
+
+
 def find_dots(images):
     circles = []
     for img in images:
@@ -176,19 +190,38 @@ def get_1d(image, acquisition_time_ms, electron_pointing_pixel, image_gain=0): #
     return deflection_MeV, spectrum_calibrated
 
 
-def prepare_data(mag_out_folder=Path('mag_out'), experiment_folder=Path('data'), output_folder=Path('with_gain'), parameters="params.csv"):
+def get_nomag_subfolder(experiment):
+    experiment = str(experiment)
+    if int(experiment) >= 6 and int(experiment) <= 11:
+        return Path('6')
+    elif int(experiment) >= 12 and int(experiment) <= 18:
+        return Path('12')
+    elif int(experiment) == 22:
+        return Path('22')
+    else:
+        return experiment
+    # Old handling:
+    # if str(experiment) == '17' or str(experiment) == '18' or str(experiment) == '15':
+    #     ex_name = Path('17_18')
+    # elif str(experiment) == '14':
+    #     ex_name = '12'
+    # else:
+    #     ex_name = experiment.name
+    # calibration_folder = mag_out_folder / ex_name
+    # return calibration_folder
+
+
+
+def prepare_data(mag_out_folder=Path('data/mag_out'), experiment_folder=Path('data/raw'), output_folder=Path('data/test'), parameters="data/params.csv"):
     # Parameters will be a path to csv when I create it
     experiments = os.listdir(experiment_folder)
     params = pd.read_csv(parameters)["gain"]
     for experiment in tqdm(experiments):
+        if experiment == '.DS_Store':
+            continue
         gain_raw = params[int(experiment) - 1]
         experiment = Path(experiment)
-        if str(experiment) == '17' or str(experiment) == '18' or str(experiment) == '15':
-            ex_name = Path('17_18')
-        elif str(experiment) == '14':
-            ex_name = '12'
-        else:
-            ex_name = experiment.name
+        ex_name = get_nomag_subfolder(experiment)
         calibration_folder = mag_out_folder / ex_name
 
         # Image preparation
