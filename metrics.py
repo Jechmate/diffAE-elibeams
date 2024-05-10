@@ -17,19 +17,16 @@ from dtaidistance import dtw
 from pytorch_msssim import ssim
 import csv
 import subprocess
-
-def sigmoid_schedule(step, max_steps=1000, k=0.9):
-    x_0 = max_steps/10
-    scale = 1 # previous verisons had 10
-    return scale - (scale / (1 + torch.exp(-k * (step - x_0))))
+from train import sigmoid_schedule, cosine_step_schedule
+from src.utils import deflection_biexp_calc, calc_spec
 
 
-def create_sigmoid_list(length, total_sum):
+def create_sections_list(length, total_sum, schedule_function):
     # Ensure that there's enough total sum to give at least 1 to each element
     assert total_sum >= length, "Total sum must be at least equal to the length of the list"
 
     # Generate sigmoid values across the specified range in ascending order
-    sigmoid_values = torch.tensor([sigmoid_schedule(torch.tensor(i), max_steps=length, k=0.9) for i in range(1, length + 1)])
+    sigmoid_values = torch.tensor([schedule_function(torch.tensor(i), max_steps=length, k=0.9) for i in range(1, length + 1)])
 
     # Normalize these sigmoid values so that their sum is 1
     normalized_sigmoid_values = sigmoid_values / torch.sum(sigmoid_values)
@@ -101,7 +98,7 @@ def calculate_pixelwise_variance(folder_path):
     return variance_per_pixel
 
 
-def compare_spectra(train_dir, valid_dir, exp_num):
+def compare_spectra(train_dir, valid_dir, exp_num, hor_size=512, el_pointing=62, pixel_to_mm=0.137):
     train_files = [os.path.join(train_dir, f) for f in os.listdir(train_dir) if f.endswith('.png')]
     valid_files = [os.path.join(valid_dir, f) for f in os.listdir(valid_dir) if f.endswith('.png')]
 
@@ -109,32 +106,42 @@ def compare_spectra(train_dir, valid_dir, exp_num):
     train_avg = np.mean([np.array(Image.open(f)) for f in train_files], axis=0).astype(np.uint8)/255
     valid_avg = np.mean([np.array(Image.open(f)) for f in valid_files], axis=0).astype(np.uint8)/255
 
-    ssim_val = ssim(torch.from_numpy(train_avg).unsqueeze(0).unsqueeze(0), torch.from_numpy(valid_avg).unsqueeze(0).unsqueeze(0), data_range=1.0)
-
     settings = pd.read_csv("data/params.csv", engine='python')[["E","P","ms"]]
     # exp_num = int(valid_dir.split('_')[-1])
     ms = settings.loc[exp_num - 1]['ms']
+    # pixel_in_mm_adjusted = pixel_to_mm*(512/128)
 
-    _, spectr_train = get_1d(train_avg, electron_pointing_pixel=62, acquisition_time_ms=ms)
-    _, spectr_valid = get_1d(valid_avg, electron_pointing_pixel=62, acquisition_time_ms=ms)
-    spectr_train = torch.Tensor(spectr_train)
-    spectr_valid = torch.Tensor(spectr_valid)
+    train_avg = torch.Tensor(train_avg).unsqueeze(0).unsqueeze(0) # once for batch, once for channels
+    valid_avg = torch.Tensor(valid_avg).unsqueeze(0).unsqueeze(0)
+    # print(train_avg.shape)
 
-    spectr_train = torch.where(torch.isnan(spectr_train), torch.zeros_like(spectr_train), spectr_train)
-    spectr_valid = torch.where(torch.isnan(spectr_valid), torch.zeros_like(spectr_valid), spectr_valid)
-
-    train_norm = normalize(spectr_train, dim=0)
-    valid_norm = normalize(spectr_valid, dim=0)
+    deflection_MeV, deflection_MeV_dx = deflection_biexp_calc(1, hor_size, el_pointing, pixel_to_mm) # TODO replace with pixel_to_mm
+    _, spectr_train = calc_spec(train_avg, 
+                                el_pointing, 
+                                deflection_MeV, 
+                                acquisition_time_ms=torch.Tensor([ms]), 
+                                resize=None,
+                                image_gain=0,
+                                device='cpu',
+                                deflection_MeV_dx=None)
+    _, spectr_valid = calc_spec(valid_avg, 
+                                el_pointing, 
+                                deflection_MeV, 
+                                acquisition_time_ms=torch.Tensor([ms]), 
+                                resize=None,
+                                image_gain=0,
+                                device='cpu',
+                                deflection_MeV_dx=None)
 
     mse = mse_loss(spectr_train, spectr_valid)
-    mse_norm = mse_loss(train_norm, valid_norm)
 
     variance_train = np.mean(calculate_pixelwise_variance(train_dir))
     variance_valid = np.mean(calculate_pixelwise_variance(valid_dir))
 
     var_diff = np.abs(variance_train - variance_valid)
 
-    return {'mse': mse, 'mse_norm' : mse_norm, 'ssim' : ssim_val, 'var_diff' : var_diff}, {'spectr_train' : spectr_train, 'spectr_valid' : spectr_valid}
+    # return {'mse': mse}, None
+    return {'mse': mse, 'var_diff' : var_diff}, {'spectr_train' : spectr_train, 'spectr_valid' : spectr_valid}
 
 
 def sample_all(root="models", result_dir="results/transfer_withgain_512_valid", device='cuda:2', n=8, dataset=Path("data/with_gain"), model_prefix='no_', load_model=True, section_counts=[30], cfg_scale=3, ns=700, model=None):
@@ -167,7 +174,7 @@ def sample_all(root="models", result_dir="results/transfer_withgain_512_valid", 
                 add = original_size - total
             else:
                 add = n
-            x = diffusion.ddim_sample_loop(model, y, cfg_scale=cfg_scale, resize=[256, 512], n=add, eta=1, device=device, gain=50)
+            x = diffusion.ddim_sample_loop(model, y, cfg_scale=cfg_scale, resize=[256, 512], n=add, eta=1, device=device, gain=0)
             if len(x.shape) == 2:
                 x = x.unsqueeze(0)
             res_path = os.path.join(result_dir, str(exp_number))
@@ -179,7 +186,7 @@ def main(validate_on = []):
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.epochs = 301
+    args.epochs = 601
     args.noise_steps = 1000
     args.phys = True
     args.physinf_thresh = args.noise_steps // 10
@@ -210,7 +217,7 @@ def main(validate_on = []):
 
     for experiment in sorted(experiments, key=lambda x: int(x)):
         args.exclude = [os.path.join(args.dataset_path, experiment)]
-        args.run_name = "valid_gaindata_cosinesched_" + experiment
+        args.run_name = "valid_gaindata_cosinesched_batch4_nonedx_600e_" + experiment
         row = settings.loc[[int(experiment) - 1], args.features]
         args.sample_settings = row.values.tolist()[0]
 
@@ -222,17 +229,24 @@ def main(validate_on = []):
 # [2, 2, 2, 2, 2, 2, 2, 2, 2, 7] 2x9plus7
 
 def sample_loop():
-    device = 'cuda:1'
-    names = ['valid_gaindata_physsmall']
+    device = 'cuda:2'
+    names = ['valid_gaindata_cosinechedb4600enonedx']
     # section_counts_options = [[15], [20], [25], [1, 1, 1, 1, 1, 1, 1, 1, 1, 6], [1, 1, 1, 1, 1, 1, 2, 2, 3, 3, 4], [2, 2, 2, 2, 2, 2, 2, 2, 2, 7]]
-    section_counts_options = [[10], create_sigmoid_list(10, 10), [30], create_sigmoid_list(10, 30), [100], create_sigmoid_list(10, 100)]#, [200], create_sigmoid_list(10, 200)]
-    section_names = ['10', 'sig10', '30', 'sig30', '100', 'sig100']#, '200', 'sig200']
+    section_counts_options = [[10], create_sections_list(10, 10, cosine_step_schedule), [15], create_sections_list(10, 15, cosine_step_schedule),
+                              [20], create_sections_list(10, 20, cosine_step_schedule), [25], create_sections_list(10, 25, cosine_step_schedule),
+                              [30], create_sections_list(10, 30, cosine_step_schedule)]# , [100], create_sections_list(10, 100, cosine_step_schedule)]#, [200], create_sigmoid_list(10, 200)]
+
+    section_names = ['10', 'cos10', '15', 'cos15', '20', 'cos20', '25', 'cos25', '30', 'cos30']#, '100', 'cos100']#, '200', 'sig200']
+    # section_counts_options = [[10], create_sections_list(10, 10, sigmoid_schedule), [15], create_sections_list(10, 15, sigmoid_schedule),
+    #                           [20], create_sections_list(10, 20, sigmoid_schedule), [25], create_sections_list(10, 25, sigmoid_schedule),
+    #                           [30], create_sections_list(10, 30, sigmoid_schedule)]
+    # section_names = ['10', 'sig10', '15', 'sig15', '20', 'sig20', '25', 'sig25', '30', 'sig30']#, '100', 'cos100']#, '200', 'sig200']
 
     for name in names:
         for cfg in range(1, 9):  # Loop through cfg values 1 to 8
             for section_counts, section_str in zip(section_counts_options, section_names):
                 # Construct the result directory path
-                result_dir = f'results_smallphys/{name}_sec{section_str}_cfg{cfg}'
+                result_dir = f'results_gaindata_batch4_600e/cossched_sec{section_str}_cfg{cfg}'
 
                 # Check if the directory already exists
                 if os.path.exists(result_dir):
@@ -243,25 +257,26 @@ def sample_loop():
                 print(f"Processing with cfg={cfg} and section_counts={section_counts}")
                 sample_all(load_model=True, root="models/" + name,
                         result_dir=result_dir,
-                        device=device, ns=1000, section_counts=section_counts, n=10, cfg_scale=cfg)
+                        device=device, ns=1000, section_counts=section_counts, n=24, cfg_scale=cfg)
 
 def metrics_loop(dir1, dir2, csv_path, start=1, end=22):
     with open(csv_path, 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(['Physics', 'Sections', 'CFG', 'mse', 'var_diff', 'FID'])
+        # writer.writerow(['Physics', 'Sections', 'CFG', 'mse'])
     for dir in tqdm(os.listdir(dir2)):
         running_mse = 0
         running_var_diff = 0
         running_fid = 0
         count = 0
-        physics = dir.split('_')[2]
+        physics = dir.split('_')[-3]
         sections = dir.split('_')[-2]
         cfg = dir.split('_cfg')[-1]
         for i in range(start, end + 1):
             subdir1 = os.path.join(dir1, str(i))
             subdir2 = os.path.join(dir2, dir, str(i))
             if os.path.isdir(subdir1) and os.path.isdir(subdir2):
-                output = subprocess.check_output(['python', '-m', 'pytorch_fid', '--device', 'cuda:1', subdir1, subdir2])
+                output = subprocess.check_output(['python', '-m', 'pytorch_fid', '--device', 'cuda:0', subdir1, subdir2])
                 output_str = output.decode('utf-8').strip()
                 fid = float(output_str.split()[-1])
                 results, _ = compare_spectra(subdir1, subdir2, i) # ['mse'], ['var_diff']
@@ -276,12 +291,59 @@ def metrics_loop(dir1, dir2, csv_path, start=1, end=22):
             fid = running_fid / count
             writer = csv.writer(file)
             writer.writerow([physics, sections, cfg, mse, var_diff, fid])
+            # writer.writerow([physics, sections, cfg, mse])
+
+
+def phys_finetune_all(validate_on=[]):
+    import argparse
+    parser = argparse.ArgumentParser()
+    args = parser.parse_args()
+    args.epochs = 101
+    args.noise_steps = 1000
+    args.phys = True
+    args.physinf_thresh = args.noise_steps // 10
+    args.beta_start = 1e-4
+    args.beta_end = 0.02
+    args.batch_size = 4
+    args.image_height = 64
+    args.image_width = 128
+    args.real_size = (256, 512)
+    args.features = ["E","P","ms"]
+    args.dataset_path = r"data/with_gain"
+    args.csv_path = "data/params.csv"
+    args.device = "cuda:0"
+    args.lr = 1e-5
+    args.exclude = []# ['train/19']
+    args.grad_acc = 1
+    args.sample_freq = 0
+    args.sample_settings = [32.,15.,15.]
+    args.sample_size = 8
+    args.electron_pointing_pixel = 62
+
+    settings = pd.read_csv(args.csv_path, engine='python')[args.features]
+
+    if validate_on:
+        experiments = validate_on
+    else:
+        experiments = os.listdir(args.dataset_path)
+
+    for experiment in sorted(experiments, key=lambda x: int(x)):
+        args.exclude = [os.path.join(args.dataset_path, experiment)]
+        args.run_name = "valid_gaindata_finetunesig10th_" + experiment
+        row = settings.loc[[int(experiment) - 1], args.features]
+        args.sample_settings = row.values.tolist()[0]
+
+        model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
+        ckpt = torch.load("models/valid_gaindata_nophys/no_" + experiment + '/' + "ema_ckpt.pt", map_location=args.device)
+        model.load_state_dict(ckpt)
+        train(args, model, True)
 
 
 if __name__ == "__main__":
-    main(validate_on=['3', '8', '11', '19', '21'])
-    # metrics_loop('data/with_gain', 'results_smallphys', 'metrics_smallphys.csv')
+    # main(validate_on=['3', '8', '11', '19', '21'])
+    metrics_loop('data/with_gain', 'results_gaindata_batch4_600e', 'metrics_600e.csv')
     # sample_loop()
+    # phys_finetune_all(validate_on=['3', '8', '11', '19', '21'])
     # validate on: 3, 8, 11, 19, 21
 
 

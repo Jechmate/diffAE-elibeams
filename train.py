@@ -13,6 +13,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torchsummary import summary
 import torchvision.transforms.functional as f
 from src.diffusion import *
+from torchvision.utils import save_image
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
@@ -31,12 +32,12 @@ def sigmoid_loss(x: torch.Tensor, el_pointing=64, pixel_in_mm=0.137, device='cpu
 
 
 def sigmoid_schedule(step, max_steps=1000, k=0.9):
-    x_0 = max_steps/12
+    x_0 = max_steps/10
     scale = 1 # previous verisons had 10
     return scale - (scale / (1 + torch.exp(-k * (step - x_0))))
 
 
-def cosine_step_schedule(step, max_steps=1000):
+def cosine_step_schedule(step, max_steps=1000, k=0.9):
     t = step / max_steps
     return 0.5 * (1 + torch.cos(t * torch.pi))
 
@@ -49,7 +50,7 @@ def weighted_mean(input, weight):
     return (weight * input).mean()
 
 
-def train(args, model=None):
+def train(args, model=None, finetune=False):
     setup_logging(args.run_name)
     device = args.device
     dataloader = get_data(args)
@@ -59,7 +60,7 @@ def train(args, model=None):
         print("Training from scratch")
         model = UNet_conditional(img_height=args.image_height, img_width=args.image_width, device=args.device, feat_num=len(args.features)).to(device)
         optimizer = optim.AdamW(model.parameters(), lr=args.lr)
-    else:
+    elif not finetune:
         optimizer = optim.AdamW([
                 {"params": model.inc.parameters(), "lr": 1e-3},
                 {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
@@ -74,6 +75,8 @@ def train(args, model=None):
                 {"params": model.outc.parameters(), "lr": 1e-3},
             ], lr=args.lr,
         )
+    else:
+        optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
     mse = nn.MSELoss()
     betas = prepare_noise_schedule(args.noise_steps, args.beta_start, args.beta_end)
@@ -90,7 +93,7 @@ def train(args, model=None):
     fing_y = int(8/(args.real_size[0]/args.image_height))
 
     # deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
-    deflection_MeV, deflection_MeV_dx = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, pixel_in_mm_adjusted)
+    deflection_MeV, deflection_MeV_dx = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, 0.137)
     deflection_MeV = deflection_MeV.to(device)
     deflection_MeV_dx = deflection_MeV_dx.to(device)
 
@@ -108,12 +111,14 @@ def train(args, model=None):
             if np.random.random() < 0.1:
                 settings = None
             predicted_noise = model(x_t, t, settings)
-            loss1 = mse(noise, predicted_noise)
-            mask = (t < args.physinf_thresh)
-            comp_factor = mask.float().mean()
+            if not finetune:
+                loss1 = mse(noise, predicted_noise)
+            # mask = (t < args.physinf_thresh)
+            # comp_factor = mask.float().mean()
             if args.phys:
             # if mask.any():
                 pred, _ = diffusion.noise_images(images, t, predicted_noise)
+                # save_image(pred, "test" + str(i) + ".png")
                 _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
                                             args.electron_pointing_pixel, 
                                             deflection_MeV, 
@@ -121,7 +126,7 @@ def train(args, model=None):
                                             resize=args.real_size,
                                             image_gain=0,
                                             device=device,
-                                            deflection_MeV_dx=deflection_MeV_dx)
+                                            deflection_MeV_dx=None)
                 _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), 
                                             args.electron_pointing_pixel, 
                                             deflection_MeV, 
@@ -129,7 +134,7 @@ def train(args, model=None):
                                             resize=args.real_size,
                                             image_gain=0,
                                             device=device,
-                                            deflection_MeV_dx=deflection_MeV_dx)
+                                            deflection_MeV_dx=None)
                 concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1)
                 max_val = torch.max(concatenated)
                 min_val = torch.min(concatenated)
@@ -137,14 +142,19 @@ def train(args, model=None):
                 pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
                 pred_norm = (pred.clamp(-1, 1) + 1) / 2
                 pred_norm[:, :, :fing_y, :fing_x] = 0
+                # save_image(pred_norm, "testnorm" + str(i) + ".png")
                 phys_weight = cosine_step_schedule(t, max_steps=args.noise_steps).unsqueeze(1).unsqueeze(2)
+                # phys_weight = sigmoid_schedule(t, max_steps=args.noise_steps).unsqueeze(1).unsqueeze(2)
                 loss2 = weighted_mse_loss(x_t_spectr_norm, pred_spectr_norm, phys_weight * 10)
                 loss3 = weighted_mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device), phys_weight)
                 # loss2 = mse(x_t_spectr_norm, pred_spectr_norm) * 10
                 # loss3 = sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device).mean(dim=(0, -2, -1))
                 # loss2 *= comp_factor
                 # loss3 *= comp_factor
-                loss = loss1 + loss2 + loss3
+                if not finetune:
+                    loss = loss1 + loss2 + loss3
+                else:
+                    loss = loss2 + loss3
             else:
                 loss = loss1
                 loss2 = torch.Tensor([0])
@@ -154,8 +164,10 @@ def train(args, model=None):
             optimizer.step()
             ema.step_ema(ema_model, model)
             scheduler.step()
-            if args.phys:
-                pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item()), "BASIC": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
+            if args.phys and not finetune:
+                pbar.set_postfix({"_ALL": "{:.4f}".format(loss.item()), "DIFF": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
+            elif finetune:
+                pbar.set_postfix({"_ALL": "{:.4f}".format(loss.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
             else:
                 pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item())})
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
@@ -179,8 +191,8 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "x0nsdiv2_k01_fix"
-    args.epochs = 301
+    args.run_name = "cossched"
+    args.epochs = 601
     args.noise_steps = 1000
     args.phys = True
     args.physinf_thresh = args.noise_steps // 10
@@ -191,16 +203,16 @@ def launch():
     args.image_width = 128
     args.real_size = (256, 512)
     args.features = ["E","P","ms"]
-    args.dataset_path = r"data/gain50"
+    args.dataset_path = r"data/with_gain"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:1"
+    args.device = "cuda:3"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1
     args.sample_freq = 0
     args.sample_settings = [32.,15.,15.]
     args.sample_size = 8
-    args.electron_pointing_pixel = 64
+    args.electron_pointing_pixel = 62
 
     model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=args.device).to(args.device)
     ckpt = torch.load("models/transfered.pt", map_location=args.device)

@@ -287,16 +287,16 @@ def deflection_biexp_calc(batch_size, hor_image_size, electron_pointing_pixel, p
     linear_space = torch.arange(hor_image_size) * pixel_in_mm
     linear_space = linear_space.repeat(batch_size, 1)
     deflection_MeV = bi_exponential_deflection(linear_space).to(torch.float32)
-    zeros = torch.zeros(batch_size, 75) # 64 is el_pointing, 11 are nans, therefore 75
+    zeros = torch.zeros(batch_size, electron_pointing_pixel + 11) # el_pointing, 11 are nans
 
     # Concatenate zeros to the beginning of each tensor in the batch
     deflection_MeV = torch.cat((zeros, deflection_MeV), dim=1)
 
     # Slice the concatenated tensor to keep only the first 512 elements in each tensor
-    deflection_MeV = deflection_MeV[:, :512]
+    deflection_MeV = deflection_MeV[:, :hor_image_size]
     deflection_MeV_dx = bi_exponential_deflection_dx(linear_space).to(torch.float32)
     deflection_MeV_dx = torch.cat((zeros, deflection_MeV_dx), dim=1)
-    deflection_MeV_dx = deflection_MeV_dx[:, :512]
+    deflection_MeV_dx = deflection_MeV_dx[:, :hor_image_size]
     return deflection_MeV, deflection_MeV_dx
 
 
