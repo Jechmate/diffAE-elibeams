@@ -162,10 +162,10 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
         axs = axs.reshape(1, -1)
     deflection_MeV, deflection_MeV_dx = deflection_biexp_calc(n, images.shape[-1], beam_point_x)
     deflection_MeV = deflection_MeV[0].unsqueeze(0) # make it batched but of batchsize 1
-    deflection_MeV_dx = deflection_MeV_dx[0].unsqueeze(0) # make it batched but of batchsize 1
+    # deflection_MeV_dx = deflection_MeV_dx[0].unsqueeze(0) # make it batched but of batchsize 1
     for i in range(n):
         im = images[i].unsqueeze(0).unsqueeze(0)
-        deflection_MeV, spectrum_calibrated = calc_spec(im/255, beam_point_x, deflection_MeV, torch.tensor(acquisition_time_ms), image_gain=gain, noise=noise, deflection_MeV_dx=deflection_MeV_dx)  # Using a local function
+        deflection_MeV, spectrum_calibrated = calc_spec(im/255, beam_point_x, deflection_MeV, torch.tensor(acquisition_time_ms), image_gain=gain, noise=noise, deflection_MeV_dx=None)  # Using a local function
         ticks = find_ticks(deflection_MeV.squeeze().cpu(), beam_point_x, beam_point_y, pixel_in_mrad, energy_levels, ranges)
         # Plot the spectrum
         axs[i, 1].plot(deflection_MeV.squeeze().cpu(), spectrum_calibrated.squeeze().cpu())
@@ -194,6 +194,44 @@ def plot_image_pairs(images, acquisition_time_ms, beam_point_x, beam_point_y, en
     plt.show()
 
 
+def compare_images(images1, images2, settings, beam_point_x, beam_point_y, folder='random_sample'):
+    n = len(images1)
+    pixel_in_mrad = 0.3653
+    energy_levels = [100, 30, 15, 10, 8, 5, 3]  # Removed 40 and 20
+    ranges = [(70, 101), (20, 31), (12, 15.5), (8, 10.5), (6, 8.2), (4.8, 5.2), (2.9, 3.2)]  # Adjusted ranges
+
+    fig, axs = plt.subplots(n, 2, figsize=(15, 4*n))
+    fig.subplots_adjust(hspace=0.3, wspace=0.15, top=0.96, bottom=0.01)
+    plt.suptitle(f"Energy: {settings['E']} MeV, Pressure: {settings['P']} bar, Acquisition time: {settings['acq_time']} ms", fontsize=16)
+    
+    if n == 1:
+        axs = axs.reshape(1, -1)
+    
+    deflection_MeV, deflection_MeV_dx = deflection_biexp_calc(n, images1.shape[-1], beam_point_x)
+    deflection_MeV = deflection_MeV[0].unsqueeze(0) # make it batched but of batchsize 1
+    deflection_MeV_dx = deflection_MeV_dx[0].unsqueeze(0) # make it batched but of batchsize 1
+    
+    for i in range(n):
+        for j in [0, 1]:
+            image = images1[i] if j == 0 else images2[i]
+            image = image.unsqueeze(0).unsqueeze(0)
+            ticks = find_ticks(deflection_MeV.squeeze().cpu(), beam_point_x, beam_point_y, pixel_in_mrad, energy_levels, ranges)
+
+            axs[i, j].imshow(image.squeeze().cpu(), vmin=0, vmax=255, cmap='inferno')
+            axs[i, j].set_yticks([ticks['tick_10mrad_px'], ticks['tick0mrad_px'], ticks['tick10mrad_px']])
+            axs[i, j].set_yticklabels(['-10', '0', '10'])
+            axs[i, j].set_ylabel('Angle [mrad]')
+
+            mev_ticks = [tick for key, tick in ticks.items() if 'MeV' in key and tick is not None]
+            axs[i, j].set_xticks(mev_ticks)
+            axs[i, j].set_xticklabels([key.split('tick')[1].replace('MeV', '') for key in ticks if 'MeV' in key and ticks[key] is not None])
+            axs[i, j].set_xlabel('Energy [MeV]')
+
+    # Construct a filename from settings
+    filename = f"Energy_{settings['E']}_Pressure_{settings['P']}bar_AcqTime_{settings['acq_time']}ms"
+    filename = filename.replace(" ", "_").replace(".", "p")  # Replace spaces and dots for compatibility
+    os.makedirs(folder, exist_ok=True)
+    plt.savefig(folder + '/' + filename)
 
 
 def stitch_images(directory):

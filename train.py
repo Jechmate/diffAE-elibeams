@@ -113,12 +113,8 @@ def train(args, model=None, finetune=False):
             predicted_noise = model(x_t, t, settings)
             if not finetune:
                 loss1 = mse(noise, predicted_noise)
-            # mask = (t < args.physinf_thresh)
-            # comp_factor = mask.float().mean()
             if args.phys:
-            # if mask.any():
                 pred, _ = diffusion.noise_images(images, t, predicted_noise)
-                # save_image(pred, "test" + str(i) + ".png")
                 _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
                                             args.electron_pointing_pixel, 
                                             deflection_MeV, 
@@ -142,15 +138,9 @@ def train(args, model=None, finetune=False):
                 pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
                 pred_norm = (pred.clamp(-1, 1) + 1) / 2
                 pred_norm[:, :, :fing_y, :fing_x] = 0
-                # save_image(pred_norm, "testnorm" + str(i) + ".png")
                 phys_weight = cosine_step_schedule(t, max_steps=args.noise_steps).unsqueeze(1).unsqueeze(2)
-                # phys_weight = sigmoid_schedule(t, max_steps=args.noise_steps).unsqueeze(1).unsqueeze(2)
                 loss2 = weighted_mse_loss(x_t_spectr_norm, pred_spectr_norm, phys_weight * 10)
                 loss3 = weighted_mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device), phys_weight)
-                # loss2 = mse(x_t_spectr_norm, pred_spectr_norm) * 10
-                # loss3 = sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device).mean(dim=(0, -2, -1))
-                # loss2 *= comp_factor
-                # loss3 *= comp_factor
                 if not finetune:
                     loss = loss1 + loss2 + loss3
                 else:
@@ -191,11 +181,10 @@ def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "cossched"
+    args.run_name = "test"
     args.epochs = 601
     args.noise_steps = 1000
-    args.phys = True
-    args.physinf_thresh = args.noise_steps // 10
+    args.phys = True # For PIDDIM, change to True
     args.beta_start = 1e-4
     args.beta_end = 0.02
     args.batch_size = 4
@@ -205,7 +194,7 @@ def launch():
     args.features = ["E","P","ms"]
     args.dataset_path = r"data/with_gain"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:3"
+    args.device = "cuda:1"
     args.lr = 1e-3
     args.exclude = []# ['train/19']
     args.grad_acc = 1

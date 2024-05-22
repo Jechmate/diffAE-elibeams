@@ -6,6 +6,8 @@ from src.utils import save_samples
 import itertools
 import numpy as np
 import csv
+from metrics import cosine_step_schedule
+from metrics import create_sections_list
 
 from tqdm import tqdm
 
@@ -45,4 +47,5 @@ def main(P_range, E_range, ms_range, n, batch_size, section_counts, cfg, root, d
 
 
 if __name__ == "__main__":
-    main(np.arange(15, 22.5, 0.5), [34], [20], 32, 8, [2, 2, 2, 2, 2, 2, 2, 2, 2, 7], 3, "test", "cuda:0", "models/model2.pt", noise_steps=1000)
+    main([5], [40, 45, 50], [20], 16, 8, [15], 1, "e_test_cossched", "cuda:3", "models/cossched/ema_ckpt.pt", noise_steps=1000)
+    main([5], [40, 45, 50], [20], 16, 8, create_sections_list(10, 25, cosine_step_schedule), 1, "e_test_nophys", "cuda:3", "models/nophys/ema_ckpt.pt", noise_steps=1000)
