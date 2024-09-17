@@ -13,6 +13,8 @@ import glob
 import src.dataset as dataset
 import scipy
 import torchvision.transforms.functional as f
+from torch.utils.data import random_split
+import random
 
 class ExperimentDataset(Dataset):
     def __init__(self, csv_file="params.csv", root_dir="train", transform=None, features=["E","perc_N","P","gain","ms"], exclude=[]):
@@ -273,6 +275,14 @@ def save_images(images, path, **kwargs):
     im.save(path)
 
 
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
 def get_data(args):
     transforms = torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
@@ -282,6 +292,34 @@ def get_data(args):
     dataset = ExperimentDataset(args.csv_path, args.dataset_path, transform=transforms, features=args.features, exclude=args.exclude)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
     return dataloader
+
+
+def get_data(args):
+    set_seed(args.seed)
+    
+    # Define transforms
+    transforms = torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Resize((args.image_height, args.image_width), antialias=True),
+        torchvision.transforms.Normalize(0.5, 0.5)
+    ])
+    
+    # Load the dataset
+    dataset = ExperimentDataset(args.csv_path, args.dataset_path, transform=transforms, features=args.features, exclude=args.exclude)
+    
+    if args.split:
+        train_size = int(0.8 * len(dataset))  # 80% for training
+        val_size = len(dataset) - train_size  # 20% for validation
+        train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+        
+        # Create DataLoader for training and validation sets
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+        val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
+        
+        return train_loader, val_loader
+    else:
+        dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+        return dataloader
 
 
 def setup_logging(run_name):
