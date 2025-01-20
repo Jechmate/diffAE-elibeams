@@ -1,9 +1,0 @@
-  0%|                                                                                                                                                                            | 0/1000 [00:01<?, ?it/s]
-Traceback (most recent call last):
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 488, in <module>
-    train()
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 352, in train
-    loss, recon_loss, kld_loss = loss_function(recon_batch, inputs, mu, logvar, loss2, loss3, kld_weight)
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 254, in loss_function
-    total_loss = recon_loss + kld_weight * kld + loss2 + loss3
-RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!

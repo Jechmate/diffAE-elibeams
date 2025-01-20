@@ -1,7 +1,0 @@
-  0%|                                                                                                                                                                            | 0/2000 [00:01<?, ?it/s]
-Traceback (most recent call last):
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 340, in <module>
-    train()
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 260, in train
-    loss, recon_loss, kld_loss = loss_function(recon_batch, inputs, mu, logvar)
-TypeError: loss_function() missing 4 required positional arguments: 'loss2', 'loss3', 'kld_weight', and 'physics_weight'

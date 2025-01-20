@@ -1,8 +1,0 @@
-  0%|▏                                                                                                                                                                 | 1/1000 [00:06<1:49:24,  6.57s/it]
-Epoch 1, Loss: nan, Recon Loss: nan, KLD Loss: nan
-Traceback (most recent call last):
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 296, in <module>
-    train()
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 253, in train
-    train_loss += loss.item()
-KeyboardInterrupt

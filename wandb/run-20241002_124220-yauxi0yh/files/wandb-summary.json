@@ -1,1 +1,0 @@
-{"_runtime":7.782965295,"batch_loss":NaN,"_step":35,"_wandb":{"runtime":7},"batch_loss3_physics":0,"physics_weight":0.002,"batch_kld_loss":NaN,"batch_loss2_physics":0,"avg_recon_loss":NaN,"avg_kld_loss":NaN,"epoch":2,"kld_weight":0.002,"batch_recon_loss":NaN,"avg_loss":NaN,"avg_loss2_physics":0,"_timestamp":1.7278657483649342e+09,"avg_loss3_physics":0}

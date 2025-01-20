@@ -1,9 +1,0 @@
-  0%|                                                                                                                                                                            | 0/1000 [00:01<?, ?it/s]
-Traceback (most recent call last):
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 486, in <module>
-    train()
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 343, in train
-    phys_weight = cosine_step_schedule(t, max_steps=max_steps).to(device).unsqueeze(1).unsqueeze(2)
-  File "/home/jechmate/diffAE-elibeams/vae.py", line 58, in cosine_step_schedule
-    return 0.5 * (1 + torch.cos(t * torch.pi))
-TypeError: cos(): argument 'input' (position 1) must be Tensor, not float
