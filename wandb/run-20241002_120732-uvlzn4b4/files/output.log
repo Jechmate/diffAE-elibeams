@@ -1,0 +1,9 @@
+  1%|█▍                                                                                                                                                                  | 9/1000 [00:31<58:22,  3.53s/it]
+Traceback (most recent call last):
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 486, in <module>
+    train()
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 408, in train
+    _, x_t_spectr = calc_spec(inputs_norm,
+  File "/home/jechmate/diffAE-elibeams/src/utils.py", line 429, in calc_spec
+    spectrum_in_MeV[:, :][mask] = spectrum_in_pixel[:, :][mask] / derivative_expanded[mask]
+IndexError: The shape of the mask [64, 512] at index 0 does not match the shape of the indexed tensor [63, 512] at index 0

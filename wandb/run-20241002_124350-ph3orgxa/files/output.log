@@ -1,0 +1,23 @@
+  0%|▍                                                                                                                                                                   | 3/1000 [00:09<52:24,  3.15s/it]
+Traceback (most recent call last):
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 506, in <module>
+    train()
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 293, in train
+    for batch_idx, batch in enumerate(train_loader):
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 628, in __next__
+    data = self._next_data()
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 671, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 61, in fetch
+    return self.collate_fn(data)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/collate.py", line 265, in default_collate
+    return collate(batch, collate_fn_map=default_collate_fn_map)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/collate.py", line 128, in collate
+    return elem_type({key: collate([d[key] for d in batch], collate_fn_map=collate_fn_map) for key in elem})
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/collate.py", line 128, in <dictcomp>
+    return elem_type({key: collate([d[key] for d in batch], collate_fn_map=collate_fn_map) for key in elem})
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/collate.py", line 120, in collate
+    return collate_fn_map[elem_type](batch, collate_fn_map=collate_fn_map)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/collate.py", line 163, in collate_tensor_fn
+    return torch.stack(batch, 0, out=out)
+KeyboardInterrupt

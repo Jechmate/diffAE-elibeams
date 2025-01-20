@@ -1,0 +1,18 @@
+{"time":"2024-10-02T12:39:08.0392888+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:39:08.039312775+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_123908-tsyurycq/logs/debug-core.log"}
+{"time":"2024-10-02T12:39:08.039353121+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:39:08.03935763+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_123908-tsyurycq/logs/debug-core.log"}
+{"time":"2024-10-02T12:39:08.042405347+02:00","level":"INFO","msg":"created new stream","id":"tsyurycq"}
+{"time":"2024-10-02T12:39:08.042426086+02:00","level":"INFO","msg":"stream: started","id":"tsyurycq"}
+{"time":"2024-10-02T12:39:08.042451905+02:00","level":"INFO","msg":"handler: started","stream_id":{"value":"tsyurycq"}}
+{"time":"2024-10-02T12:39:08.04246558+02:00","level":"INFO","msg":"sender: started","stream_id":{"value":"tsyurycq"}}
+{"time":"2024-10-02T12:39:08.042447967+02:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"tsyurycq"}}
+{"time":"2024-10-02T12:39:08.263637943+02:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-10-02T12:39:08.264716259+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-02T12:39:16.782898653+02:00","level":"INFO","msg":"stream: closing","id":"tsyurycq"}
+{"time":"2024-10-02T12:39:16.782931224+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-02T12:39:16.785236817+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-02T12:39:17.700211795+02:00","level":"INFO","msg":"handler: closed","stream_id":{"value":"tsyurycq"}}
+{"time":"2024-10-02T12:39:17.700264625+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"tsyurycq"}}
+{"time":"2024-10-02T12:39:17.700290964+02:00","level":"INFO","msg":"sender: closed","stream_id":{"value":"tsyurycq"}}
+{"time":"2024-10-02T12:39:17.700349344+02:00","level":"INFO","msg":"stream: closed","id":"tsyurycq"}

@@ -1,0 +1,18 @@
+{"time":"2024-09-27T11:50:03.971121605+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-09-27T11:50:03.971138637+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20240927_115003-alxsu8wv/logs/debug-core.log"}
+{"time":"2024-09-27T11:50:03.971174354+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-09-27T11:50:03.971178972+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20240927_115003-alxsu8wv/logs/debug-core.log"}
+{"time":"2024-09-27T11:50:03.974135711+02:00","level":"INFO","msg":"created new stream","id":"alxsu8wv"}
+{"time":"2024-09-27T11:50:03.974150578+02:00","level":"INFO","msg":"stream: started","id":"alxsu8wv"}
+{"time":"2024-09-27T11:50:03.974171989+02:00","level":"INFO","msg":"handler: started","stream_id":{"value":"alxsu8wv"}}
+{"time":"2024-09-27T11:50:03.97423657+02:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"alxsu8wv"}}
+{"time":"2024-09-27T11:50:03.974353529+02:00","level":"INFO","msg":"sender: started","stream_id":{"value":"alxsu8wv"}}
+{"time":"2024-09-27T11:50:04.247762347+02:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-09-27T11:50:04.248848706+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-09-27T11:50:22.469069641+02:00","level":"INFO","msg":"stream: closing","id":"alxsu8wv"}
+{"time":"2024-09-27T11:50:22.469092553+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-09-27T11:50:22.469594736+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-09-27T11:50:24.797851348+02:00","level":"INFO","msg":"handler: closed","stream_id":{"value":"alxsu8wv"}}
+{"time":"2024-09-27T11:50:24.797922272+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"alxsu8wv"}}
+{"time":"2024-09-27T11:50:24.797927692+02:00","level":"INFO","msg":"sender: closed","stream_id":{"value":"alxsu8wv"}}
+{"time":"2024-09-27T11:50:24.798056704+02:00","level":"INFO","msg":"stream: closed","id":"alxsu8wv"}

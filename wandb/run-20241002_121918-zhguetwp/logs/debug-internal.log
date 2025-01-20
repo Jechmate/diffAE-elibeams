@@ -1,0 +1,18 @@
+{"time":"2024-10-02T12:19:18.304067796+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:19:18.304091721+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_121918-zhguetwp/logs/debug-core.log"}
+{"time":"2024-10-02T12:19:18.30412849+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:19:18.304133269+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_121918-zhguetwp/logs/debug-core.log"}
+{"time":"2024-10-02T12:19:18.306989133+02:00","level":"INFO","msg":"created new stream","id":"zhguetwp"}
+{"time":"2024-10-02T12:19:18.307012507+02:00","level":"INFO","msg":"stream: started","id":"zhguetwp"}
+{"time":"2024-10-02T12:19:18.307033366+02:00","level":"INFO","msg":"sender: started","stream_id":{"value":"zhguetwp"}}
+{"time":"2024-10-02T12:19:18.307071417+02:00","level":"INFO","msg":"handler: started","stream_id":{"value":"zhguetwp"}}
+{"time":"2024-10-02T12:19:18.307032074+02:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"zhguetwp"}}
+{"time":"2024-10-02T12:19:18.563870831+02:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-10-02T12:19:18.564911786+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-02T12:19:21.204116482+02:00","level":"INFO","msg":"stream: closing","id":"zhguetwp"}
+{"time":"2024-10-02T12:19:21.20415781+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-02T12:19:21.204513738+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-02T12:19:22.129570952+02:00","level":"INFO","msg":"handler: closed","stream_id":{"value":"zhguetwp"}}
+{"time":"2024-10-02T12:19:22.129604776+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"zhguetwp"}}
+{"time":"2024-10-02T12:19:22.129694364+02:00","level":"INFO","msg":"sender: closed","stream_id":{"value":"zhguetwp"}}
+{"time":"2024-10-02T12:19:22.129710344+02:00","level":"INFO","msg":"stream: closed","id":"zhguetwp"}

@@ -1,0 +1,18 @@
+{"time":"2024-10-02T12:24:05.394009718+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:24:05.394049813+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_122405-z50o1822/logs/debug-core.log"}
+{"time":"2024-10-02T12:24:05.394151785+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:24:05.394160131+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_122405-z50o1822/logs/debug-core.log"}
+{"time":"2024-10-02T12:24:05.397409988+02:00","level":"INFO","msg":"created new stream","id":"z50o1822"}
+{"time":"2024-10-02T12:24:05.39743227+02:00","level":"INFO","msg":"stream: started","id":"z50o1822"}
+{"time":"2024-10-02T12:24:05.397456887+02:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"z50o1822"}}
+{"time":"2024-10-02T12:24:05.39744797+02:00","level":"INFO","msg":"handler: started","stream_id":{"value":"z50o1822"}}
+{"time":"2024-10-02T12:24:05.397498585+02:00","level":"INFO","msg":"sender: started","stream_id":{"value":"z50o1822"}}
+{"time":"2024-10-02T12:24:05.665608894+02:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-10-02T12:24:05.666614486+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-02T12:24:58.062468394+02:00","level":"INFO","msg":"stream: closing","id":"z50o1822"}
+{"time":"2024-10-02T12:24:58.062504291+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-02T12:24:58.063307473+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-02T12:24:59.756918731+02:00","level":"INFO","msg":"handler: closed","stream_id":{"value":"z50o1822"}}
+{"time":"2024-10-02T12:24:59.756963365+02:00","level":"INFO","msg":"sender: closed","stream_id":{"value":"z50o1822"}}
+{"time":"2024-10-02T12:24:59.756949719+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"z50o1822"}}
+{"time":"2024-10-02T12:24:59.757193097+02:00","level":"INFO","msg":"stream: closed","id":"z50o1822"}

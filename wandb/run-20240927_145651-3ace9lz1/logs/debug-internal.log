@@ -1,0 +1,18 @@
+{"time":"2024-09-27T14:56:51.729967307+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-09-27T14:56:51.72998983+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20240927_145651-3ace9lz1/logs/debug-core.log"}
+{"time":"2024-09-27T14:56:51.730029604+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-09-27T14:56:51.730034403+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20240927_145651-3ace9lz1/logs/debug-core.log"}
+{"time":"2024-09-27T14:56:51.733043054+02:00","level":"INFO","msg":"created new stream","id":"3ace9lz1"}
+{"time":"2024-09-27T14:56:51.733063993+02:00","level":"INFO","msg":"stream: started","id":"3ace9lz1"}
+{"time":"2024-09-27T14:56:51.733085794+02:00","level":"INFO","msg":"sender: started","stream_id":{"value":"3ace9lz1"}}
+{"time":"2024-09-27T14:56:51.733090834+02:00","level":"INFO","msg":"handler: started","stream_id":{"value":"3ace9lz1"}}
+{"time":"2024-09-27T14:56:51.733091785+02:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"3ace9lz1"}}
+{"time":"2024-09-27T14:56:51.954372396+02:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-09-27T14:56:51.955477291+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-09-27T18:24:00.901952503+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-09-27T18:24:00.902457502+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-09-27T18:24:04.792051907+02:00","level":"INFO","msg":"stream: closing","id":"3ace9lz1"}
+{"time":"2024-09-27T18:24:04.792074149+02:00","level":"INFO","msg":"handler: closed","stream_id":{"value":"3ace9lz1"}}
+{"time":"2024-09-27T18:24:04.792091532+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"3ace9lz1"}}
+{"time":"2024-09-27T18:24:04.792104697+02:00","level":"INFO","msg":"sender: closed","stream_id":{"value":"3ace9lz1"}}
+{"time":"2024-09-27T18:24:04.792296417+02:00","level":"INFO","msg":"stream: closed","id":"3ace9lz1"}

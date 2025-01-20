@@ -1,0 +1,42 @@
+ 24%|███████████████████████████████████████▏                                                                                                                          | 242/1000 [10:38<33:20,  2.64s/it]
+Epoch 1, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 11, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 21, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 31, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 41, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 51, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 61, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 71, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 81, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 91, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 101, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 111, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 121, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 131, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 141, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 151, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 161, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 171, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 181, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 191, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 201, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 211, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 221, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 231, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Epoch 241, Loss: nan, Recon Loss: nan, KLD Loss: nan
+Traceback (most recent call last):
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 296, in <module>
+    train()
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 238, in train
+    for batch_idx, batch in enumerate(train_loader):
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 628, in __next__
+    data = self._next_data()
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 671, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 58, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 58, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/jechmate/diffAE-elibeams/src/utils.py", line 55, in __getitem__
+    image = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
+KeyboardInterrupt

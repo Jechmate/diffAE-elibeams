@@ -1,0 +1,18 @@
+{"time":"2024-09-30T12:10:28.440963151+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-09-30T12:10:28.440981315+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20240930_121028-5ky0yhsq/logs/debug-core.log"}
+{"time":"2024-09-30T12:10:28.441023545+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-09-30T12:10:28.441029636+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20240930_121028-5ky0yhsq/logs/debug-core.log"}
+{"time":"2024-09-30T12:10:28.44398383+02:00","level":"INFO","msg":"created new stream","id":"5ky0yhsq"}
+{"time":"2024-09-30T12:10:28.444002254+02:00","level":"INFO","msg":"stream: started","id":"5ky0yhsq"}
+{"time":"2024-09-30T12:10:28.444025378+02:00","level":"INFO","msg":"handler: started","stream_id":{"value":"5ky0yhsq"}}
+{"time":"2024-09-30T12:10:28.444050204+02:00","level":"INFO","msg":"sender: started","stream_id":{"value":"5ky0yhsq"}}
+{"time":"2024-09-30T12:10:28.444089808+02:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"5ky0yhsq"}}
+{"time":"2024-09-30T12:10:30.149601576+02:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-09-30T12:10:30.1508931+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-09-30T12:51:50.710974679+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-09-30T12:51:50.711471853+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-09-30T12:51:52.940122275+02:00","level":"INFO","msg":"stream: closing","id":"5ky0yhsq"}
+{"time":"2024-09-30T12:51:52.94014592+02:00","level":"INFO","msg":"handler: closed","stream_id":{"value":"5ky0yhsq"}}
+{"time":"2024-09-30T12:51:52.940166869+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"5ky0yhsq"}}
+{"time":"2024-09-30T12:51:52.940208838+02:00","level":"INFO","msg":"sender: closed","stream_id":{"value":"5ky0yhsq"}}
+{"time":"2024-09-30T12:51:52.940342208+02:00","level":"INFO","msg":"stream: closed","id":"5ky0yhsq"}

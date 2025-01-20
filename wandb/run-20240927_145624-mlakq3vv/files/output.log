@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 237, in <module>
+    train()
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 169, in train
+    vae = VAE(latent_dim=wandb.config.latent_dim).to(device)
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 94, in __init__
+    self.fc1 = nn.Linear(128 * 16 * 32, 256)  # Flattened size
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/nn/modules/linear.py", line 101, in __init__
+    self.reset_parameters()
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/nn/modules/linear.py", line 107, in reset_parameters
+    init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/nn/init.py", line 412, in kaiming_uniform_
+    return tensor.uniform_(-bound, bound)
+KeyboardInterrupt

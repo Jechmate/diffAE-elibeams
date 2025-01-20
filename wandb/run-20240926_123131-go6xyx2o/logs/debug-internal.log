@@ -1,0 +1,19 @@
+{"time":"2024-09-26T12:31:31.665458487+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-09-26T12:31:31.665482603+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20240926_123131-go6xyx2o/logs/debug-core.log"}
+{"time":"2024-09-26T12:31:31.665527677+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-09-26T12:31:31.665532316+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20240926_123131-go6xyx2o/logs/debug-core.log"}
+{"time":"2024-09-26T12:31:31.669113092+02:00","level":"INFO","msg":"created new stream","id":"go6xyx2o"}
+{"time":"2024-09-26T12:31:31.669129673+02:00","level":"INFO","msg":"stream: started","id":"go6xyx2o"}
+{"time":"2024-09-26T12:31:31.669152516+02:00","level":"INFO","msg":"sender: started","stream_id":{"value":"go6xyx2o"}}
+{"time":"2024-09-26T12:31:31.669153387+02:00","level":"INFO","msg":"handler: started","stream_id":{"value":"go6xyx2o"}}
+{"time":"2024-09-26T12:31:31.669154199+02:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"go6xyx2o"}}
+{"time":"2024-09-26T12:31:31.887304134+02:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-09-26T12:31:31.888317517+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-09-26T15:49:47.470128963+02:00","level":"INFO","msg":"api: retrying HTTP request, no error or response"}
+{"time":"2024-09-26T17:28:21.681103453+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-09-26T17:28:21.681451177+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-09-26T17:28:24.063161951+02:00","level":"INFO","msg":"stream: closing","id":"go6xyx2o"}
+{"time":"2024-09-26T17:28:24.063187148+02:00","level":"INFO","msg":"handler: closed","stream_id":{"value":"go6xyx2o"}}
+{"time":"2024-09-26T17:28:24.063206665+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"go6xyx2o"}}
+{"time":"2024-09-26T17:28:24.06323062+02:00","level":"INFO","msg":"sender: closed","stream_id":{"value":"go6xyx2o"}}
+{"time":"2024-09-26T17:28:24.06340615+02:00","level":"INFO","msg":"stream: closed","id":"go6xyx2o"}

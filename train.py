@@ -114,8 +114,9 @@ def train(args, model=None, finetune=False):
             if not finetune:
                 loss1 = mse(noise, predicted_noise)
             if args.phys:
-                pred, _ = diffusion.noise_images(images, t, predicted_noise)
-                _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
+                pred = diffusion._predict_xstart_from_eps(x_t=x_t, t=t, eps=predicted_noise)
+                # pred, _ = diffusion.noise_images(images, t, predicted_noise)
+                _, images_spectr = calc_spec(images.to(device), 
                                             args.electron_pointing_pixel, 
                                             deflection_MeV, 
                                             acquisition_time_ms=acq_time, 
@@ -131,15 +132,15 @@ def train(args, model=None, finetune=False):
                                             image_gain=0,
                                             device=device,
                                             deflection_MeV_dx=None)
-                concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1)
+                concatenated = torch.cat((images_spectr, pred_spectr), dim=-1)
                 max_val = torch.max(concatenated)
                 min_val = torch.min(concatenated)
-                x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
+                images_spectr_norm = (images_spectr - min_val) / ((max_val - min_val) / 2) - 1
                 pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
                 pred_norm = (pred.clamp(-1, 1) + 1) / 2
                 pred_norm[:, :, :fing_y, :fing_x] = 0
                 phys_weight = cosine_step_schedule(t, max_steps=args.noise_steps).unsqueeze(1).unsqueeze(2)
-                loss2 = weighted_mse_loss(x_t_spectr_norm, pred_spectr_norm, phys_weight * 10)
+                loss2 = weighted_mse_loss(images_spectr_norm, pred_spectr_norm, phys_weight * 10)
                 loss3 = weighted_mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device), phys_weight)
                 if not finetune:
                     loss = loss1 + loss2 + loss3
@@ -177,11 +178,13 @@ def train(args, model=None, finetune=False):
         torch.save(ema_model.state_dict(), os.path.join("models", args.run_name, f"ema_ckpt.pt"))
         torch.save(optimizer.state_dict(), os.path.join("models", args.run_name, f"optim.pt"))
 
+
 def launch():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.run_name = "test"
+    args.run_name = "x_start_phys"
+    args.seed = 42
     args.epochs = 601
     args.noise_steps = 1000
     args.phys = True # For PIDDIM, change to True
@@ -194,8 +197,9 @@ def launch():
     args.features = ["E","P","ms"]
     args.dataset_path = r"data/with_gain"
     args.csv_path = "data/params.csv"
-    args.device = "cuda:1"
+    args.device = "cuda:2"
     args.lr = 1e-3
+    args.split = False
     args.exclude = []# ['train/19']
     args.grad_acc = 1
     args.sample_freq = 0

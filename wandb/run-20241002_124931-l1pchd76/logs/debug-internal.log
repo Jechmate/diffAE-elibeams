@@ -1,0 +1,18 @@
+{"time":"2024-10-02T12:49:31.304147798+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:49:31.304166483+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_124931-l1pchd76/logs/debug-core.log"}
+{"time":"2024-10-02T12:49:31.304213482+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:49:31.30421828+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_124931-l1pchd76/logs/debug-core.log"}
+{"time":"2024-10-02T12:49:31.307359944+02:00","level":"INFO","msg":"created new stream","id":"l1pchd76"}
+{"time":"2024-10-02T12:49:31.307378148+02:00","level":"INFO","msg":"stream: started","id":"l1pchd76"}
+{"time":"2024-10-02T12:49:31.307400179+02:00","level":"INFO","msg":"handler: started","stream_id":{"value":"l1pchd76"}}
+{"time":"2024-10-02T12:49:31.307431959+02:00","level":"INFO","msg":"sender: started","stream_id":{"value":"l1pchd76"}}
+{"time":"2024-10-02T12:49:31.307463518+02:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"l1pchd76"}}
+{"time":"2024-10-02T12:49:31.635512484+02:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-10-02T12:49:31.636709413+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-02T12:50:54.890625541+02:00","level":"INFO","msg":"stream: closing","id":"l1pchd76"}
+{"time":"2024-10-02T12:50:54.89065187+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-02T12:50:54.891091476+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-02T12:50:56.989529091+02:00","level":"INFO","msg":"handler: closed","stream_id":{"value":"l1pchd76"}}
+{"time":"2024-10-02T12:50:56.989582561+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"l1pchd76"}}
+{"time":"2024-10-02T12:50:56.989593692+02:00","level":"INFO","msg":"sender: closed","stream_id":{"value":"l1pchd76"}}
+{"time":"2024-10-02T12:50:56.989733414+02:00","level":"INFO","msg":"stream: closed","id":"l1pchd76"}

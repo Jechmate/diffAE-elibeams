@@ -1,0 +1,30 @@
+  1%|█▊                                                                                                                                                                 | 11/1000 [00:28<42:46,  2.60s/it]
+Epoch 10, Loss: 474.8977, Recon Loss: 471.2216, KLD Loss: 204.2294, Val Loss: 2934.7675, Loss2 Physics: 0.0000, Loss3 Physics: 0.0000
+Traceback (most recent call last):
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 505, in <module>
+    train()
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 293, in train
+    for batch_idx, batch in enumerate(train_loader):
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 628, in __next__
+    data = self._next_data()
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 671, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 58, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 58, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataset.py", line 295, in __getitem__
+    return self.dataset[self.indices[idx]]
+  File "/home/jechmate/diffAE-elibeams/src/utils.py", line 61, in __getitem__
+    image = self.transform(image)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torchvision/transforms/transforms.py", line 95, in __call__
+    img = t(img)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1190, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torchvision/transforms/transforms.py", line 270, in forward
+    return F.normalize(tensor, self.mean, self.std, self.inplace)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torchvision/transforms/functional.py", line 360, in normalize
+    return F_t.normalize(tensor, mean=mean, std=std, inplace=inplace)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torchvision/transforms/functional_tensor.py", line 933, in normalize
+    std = torch.as_tensor(std, dtype=dtype, device=tensor.device)
+KeyboardInterrupt

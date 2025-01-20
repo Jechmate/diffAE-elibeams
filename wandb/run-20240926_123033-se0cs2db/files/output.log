@@ -1,0 +1,22 @@
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 19/19 [00:10<00:00,  1.83it/s]
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 19/19 [00:08<00:00,  2.16it/s]
+Epoch 1, Loss: 502.17095807978984, MSE Loss: 2.0535461212459363, KLD Loss: 500.11741550423596
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 19/19 [00:08<00:00,  2.16it/s]
+ 63%|████████████████████████████████████████████████████████████████████████████████████████████████████████▏                                                            | 12/19 [00:05<00:03,  2.07it/s]
+  0%|▏                                                                                                                                                                 | 3/2000 [00:34<6:27:48, 11.65s/it]
+Traceback (most recent call last):
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 229, in <module>
+    train()
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 189, in train
+    optimizer.step()
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/optim/optimizer.py", line 140, in wrapper
+    out = func(*args, **kwargs)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/optim/optimizer.py", line 23, in _use_grad
+    ret = func(self, *args, **kwargs)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/optim/adam.py", line 234, in step
+    adam(params_with_grad,
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/optim/adam.py", line 300, in adam
+    func(params,
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/optim/adam.py", line 410, in _single_tensor_adam
+    denom = (exp_avg_sq.sqrt() / bias_correction2_sqrt).add_(eps)
+KeyboardInterrupt

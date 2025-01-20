@@ -1,0 +1,18 @@
+{"time":"2024-10-02T12:41:44.208222975+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:41:44.208245538+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_124144-s39dlzaj/logs/debug-core.log"}
+{"time":"2024-10-02T12:41:44.208286775+02:00","level":"INFO","msg":"using version","core version":"0.18.1"}
+{"time":"2024-10-02T12:41:44.208291213+02:00","level":"INFO","msg":"created symlink","path":"/home/jechmate/diffAE-elibeams/wandb/run-20241002_124144-s39dlzaj/logs/debug-core.log"}
+{"time":"2024-10-02T12:41:44.211237621+02:00","level":"INFO","msg":"created new stream","id":"s39dlzaj"}
+{"time":"2024-10-02T12:41:44.211255855+02:00","level":"INFO","msg":"stream: started","id":"s39dlzaj"}
+{"time":"2024-10-02T12:41:44.211276514+02:00","level":"INFO","msg":"handler: started","stream_id":{"value":"s39dlzaj"}}
+{"time":"2024-10-02T12:41:44.21130656+02:00","level":"INFO","msg":"sender: started","stream_id":{"value":"s39dlzaj"}}
+{"time":"2024-10-02T12:41:44.211344341+02:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"s39dlzaj"}}
+{"time":"2024-10-02T12:41:44.487729216+02:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-10-02T12:41:44.488789167+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-10-02T12:42:14.642988045+02:00","level":"INFO","msg":"stream: closing","id":"s39dlzaj"}
+{"time":"2024-10-02T12:42:14.643031036+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-10-02T12:42:14.643452658+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-10-02T12:42:15.608328149+02:00","level":"INFO","msg":"handler: closed","stream_id":{"value":"s39dlzaj"}}
+{"time":"2024-10-02T12:42:15.608378664+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":{"value":"s39dlzaj"}}
+{"time":"2024-10-02T12:42:15.608402309+02:00","level":"INFO","msg":"sender: closed","stream_id":{"value":"s39dlzaj"}}
+{"time":"2024-10-02T12:42:15.608623244+02:00","level":"INFO","msg":"stream: closed","id":"s39dlzaj"}

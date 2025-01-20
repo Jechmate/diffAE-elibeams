@@ -1,0 +1,31 @@
+  2%|███▍                                                                                                                                                               | 21/1000 [00:50<39:30,  2.42s/it]
+Epoch 10, Loss: 402307636264464021714342407831552.0000, Recon Loss: 1655.1349, KLD Loss: 22350425113251562002556882188763136.0000, Val Loss: 362048778892095501996378355138560.0000, Loss2 Physics: 0.0162, Loss3 Physics: 0.0000
+Epoch 20, Loss: nan, Recon Loss: nan, KLD Loss: nan, Val Loss: nan, Loss2 Physics: 0.0158, Loss3 Physics: nan
+Traceback (most recent call last):
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 487, in <module>
+    train()
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 293, in train
+    for batch_idx, batch in enumerate(train_loader):
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 628, in __next__
+    data = self._next_data()
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 671, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 58, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 58, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataset.py", line 295, in __getitem__
+    return self.dataset[self.indices[idx]]
+  File "/home/jechmate/diffAE-elibeams/src/utils.py", line 57, in __getitem__
+    settings = self.settings.iloc[exp_index-1, 0:]
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/pandas/core/indexing.py", line 1147, in __getitem__
+    return self._getitem_tuple(key)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/pandas/core/indexing.py", line 1654, in _getitem_tuple
+    return self._getitem_lowerdim(tup)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/pandas/core/indexing.py", line 1063, in _getitem_lowerdim
+    return getattr(section, self.name)[new_key]
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/pandas/core/indexing.py", line 1153, in __getitem__
+    return self._getitem_axis(maybe_callable, axis=axis)
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/pandas/core/indexing.py", line 1682, in _getitem_axis
+    if key is Ellipsis:
+KeyboardInterrupt

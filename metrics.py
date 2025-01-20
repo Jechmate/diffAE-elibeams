@@ -136,10 +136,14 @@ def sample_all(root="models", result_dir="results/transfer_withgain_512_valid", 
         P = settings.loc[exp_number - 1]['P']
         ms = settings.loc[exp_number - 1]['ms']
         if load_model:
-            model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=device).to(device)
-            ckpt = torch.load(os.path.join(root, subdir, 'ema_ckpt.pt'), map_location=device)
-            model.load_state_dict(ckpt)
-            model.eval()
+            phys_model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=device).to(device)
+            ckpt = torch.load(os.path.join(root, subdir, 'phys.pt'), map_location=device)
+            phys_model.load_state_dict(ckpt)
+            phys_model.eval()
+            nophys_model = UNet_conditional(img_width=128, img_height=64, feat_num=3, device=device).to(device)
+            ckpt = torch.load(os.path.join(root, subdir, 'phys.pt'), map_location=device)
+            nophys_model.load_state_dict(ckpt)
+            nophys_model.eval()
         diffusion = SpacedDiffusion(beta_start=1e-4, beta_end=0.02, section_counts=section_counts, noise_steps=ns, img_width=128, img_height=64, device=device)
         y = torch.Tensor([E,P,ms]).to(device).float().unsqueeze(0) # parameter vector
         res_path = os.path.join(result_dir, str(exp_number))
@@ -150,7 +154,7 @@ def sample_all(root="models", result_dir="results/transfer_withgain_512_valid", 
                 add = original_size - total
             else:
                 add = n
-            x = diffusion.ddim_sample_loop(model, y, cfg_scale=cfg_scale, resize=[256, 512], n=add, eta=1, device=device, gain=0)
+            x = diffusion.ddim_sample_loop(phys_model, nophys_model, y, cfg_scale=cfg_scale, resize=[256, 512], n=add, eta=1, device=device, gain=0)
             if len(x.shape) == 2:
                 x = x.unsqueeze(0)
             res_path = os.path.join(result_dir, str(exp_number))
@@ -203,8 +207,8 @@ def main(validate_on = []):
 
 
 def sample_loop():
-    device = 'cuda:2'
-    names = ['valid_gaindata_cosineched']
+    device = 'cuda:3'
+    names = ['valid_gaindata_both']
     section_counts_options = [[10], create_sections_list(10, 10, cosine_step_schedule), [15], create_sections_list(10, 15, cosine_step_schedule),
                               [20], create_sections_list(10, 20, cosine_step_schedule), [25], create_sections_list(10, 25, cosine_step_schedule),
                               [30], create_sections_list(10, 30, cosine_step_schedule)]
@@ -214,14 +218,14 @@ def sample_loop():
     for name in names:
         for cfg in range(1, 9):
             for section_counts, section_str in zip(section_counts_options, section_names):
-                result_dir = f'results_gaindata_batch4_600e/cossched_sec{section_str}_cfg{cfg}'
+                result_dir = f'valid_gaindata_newguidanceboth/newguidanceboth_sec{section_str}_cfg{cfg}'
                 if os.path.exists(result_dir):
                     print(f"Directory {result_dir} already exists. Skipping...")
                     continue 
                 print(f"Processing with cfg={cfg} and section_counts={section_counts}")
                 sample_all(load_model=True, root="models/" + name,
                         result_dir=result_dir,
-                        device=device, ns=1000, section_counts=section_counts, n=24, cfg_scale=cfg)
+                        device=device, ns=1000, section_counts=section_counts, n=4, cfg_scale=cfg)
 
 
 def metrics_loop(dir1, dir2, csv_path, start=1, end=22):
@@ -259,7 +263,7 @@ def metrics_loop(dir1, dir2, csv_path, start=1, end=22):
 
 if __name__ == "__main__":
     # main(validate_on=['3', '8', '11', '19', '21'])
-    metrics_loop('data/with_gain', 'results_gaindata_batch4_600e', 'metrics.csv')
+    metrics_loop('data/with_gain', 'valid_gaindata_both', 'metrics_both.csv')
     # sample_loop()
 
 # validate on: 3, 8, 11, 19, 21

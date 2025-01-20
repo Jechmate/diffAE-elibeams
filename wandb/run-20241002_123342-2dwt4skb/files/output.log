@@ -1,0 +1,21 @@
+  2%|███▉                                                                                                                                                               | 24/1000 [00:57<38:43,  2.38s/it]
+Epoch 10, Loss: 689.1465, Recon Loss: 576.5943, KLD Loss: 618.0639, Val Loss: 503.7660, Loss2 Physics: 86.6304, Loss3 Physics: 14.7967
+Epoch 20, Loss: nan, Recon Loss: nan, KLD Loss: nan, Val Loss: nan, Loss2 Physics: 9805.1463, Loss3 Physics: nan
+Traceback (most recent call last):
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 489, in <module>
+    train()
+  File "/home/jechmate/diffAE-elibeams/vae.py", line 293, in train
+    for batch_idx, batch in enumerate(train_loader):
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 628, in __next__
+    data = self._next_data()
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 671, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 58, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 58, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/jechmate/anaconda3/envs/eli/lib/python3.10/site-packages/torch/utils/data/dataset.py", line 295, in __getitem__
+    return self.dataset[self.indices[idx]]
+  File "/home/jechmate/diffAE-elibeams/src/utils.py", line 55, in __getitem__
+    image = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
+KeyboardInterrupt
