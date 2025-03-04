@@ -50,33 +50,14 @@ def weighted_mean(input, weight):
     return (weight * input).mean()
 
 
-def train(args, model=None, finetune=False):
+def train(args, model=None):
     setup_logging(args.run_name)
     device = args.device
     dataloader = get_data(args)
     gradient_acc = args.grad_acc
     steps_per_epoch = len(dataloader) / gradient_acc
-    if not model:
-        print("Training from scratch")
-        model = UNet_conditional(img_height=args.image_height, img_width=args.image_width, device=args.device, feat_num=len(args.features)).to(device)
-        optimizer = optim.AdamW(model.parameters(), lr=args.lr)
-    elif not finetune:
-        optimizer = optim.AdamW([
-                {"params": model.inc.parameters(), "lr": 1e-3},
-                {"params": model.down1.maxpool_conv.parameters(), "lr": 1e-3},
-                {"params": model.down2.maxpool_conv.parameters(), "lr": 1e-4},
-                {"params": model.down3.maxpool_conv.parameters(), "lr": 1e-4},
-                {"params": model.bot1.parameters(), "lr": 1e-5},
-                {"params": model.bot2.parameters(), "lr": 1e-5},
-                {"params": model.bot3.parameters(), "lr": 1e-5},
-                {"params": model.up1.conv.parameters(), "lr": 1e-4},
-                {"params": model.up2.conv.parameters(), "lr": 1e-4},
-                {"params": model.up3.conv.parameters(), "lr": 1e-3},
-                {"params": model.outc.parameters(), "lr": 1e-3},
-            ], lr=args.lr,
-        )
-    else:
-        optimizer = optim.AdamW(model.parameters(), lr=args.lr)
+    model = UNet_conditional(length=512, device=args.device, feat_num=len(args.features)).to(device)
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs*steps_per_epoch)
     mse = nn.MSELoss()
     betas = prepare_noise_schedule(args.noise_steps, args.beta_start, args.beta_end)
@@ -86,16 +67,6 @@ def train(args, model=None, finetune=False):
     l = len(dataloader)
     ema = EMA(0.995)
     ema_model = copy.deepcopy(model).eval().requires_grad_(False).to(device)
-
-    el_pointing_adjusted = int(args.electron_pointing_pixel/(args.real_size[1]/args.image_width))
-    pixel_in_mm_adjusted = 0.137*(args.real_size[1]/args.image_width)
-    fing_x = int(8/(args.real_size[1]/args.image_width))
-    fing_y = int(8/(args.real_size[0]/args.image_height))
-
-    # deflection_MeV = deflection_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel).to(device)
-    deflection_MeV, deflection_MeV_dx = deflection_biexp_calc(args.batch_size, args.real_size[1], args.electron_pointing_pixel, 0.137)
-    deflection_MeV = deflection_MeV.to(device)
-    deflection_MeV_dx = deflection_MeV_dx.to(device)
 
     for epoch in range(args.epochs):
         logging.info(f"Starting epoch {epoch}:")
@@ -111,55 +82,13 @@ def train(args, model=None, finetune=False):
             if np.random.random() < 0.1:
                 settings = None
             predicted_noise = model(x_t, t, settings)
-            if not finetune:
-                loss1 = mse(noise, predicted_noise)
-            if args.phys:
-                pred, _ = diffusion.noise_images(images, t, predicted_noise)
-                _, x_t_spectr = calc_spec(((x_t.clamp(-1, 1) + 1) / 2).to(device), 
-                                            args.electron_pointing_pixel, 
-                                            deflection_MeV, 
-                                            acquisition_time_ms=acq_time, 
-                                            resize=args.real_size,
-                                            image_gain=0,
-                                            device=device,
-                                            deflection_MeV_dx=None)
-                _, pred_spectr = calc_spec(((pred.clamp(-1, 1) + 1) / 2).to(device), 
-                                            args.electron_pointing_pixel, 
-                                            deflection_MeV, 
-                                            acquisition_time_ms=acq_time, 
-                                            resize=args.real_size,
-                                            image_gain=0,
-                                            device=device,
-                                            deflection_MeV_dx=None)
-                concatenated = torch.cat((x_t_spectr, pred_spectr), dim=-1)
-                max_val = torch.max(concatenated)
-                min_val = torch.min(concatenated)
-                x_t_spectr_norm = (x_t_spectr - min_val) / ((max_val - min_val) / 2) - 1
-                pred_spectr_norm = (pred_spectr - min_val) / ((max_val - min_val) / 2) - 1
-                pred_norm = (pred.clamp(-1, 1) + 1) / 2
-                pred_norm[:, :, :fing_y, :fing_x] = 0
-                phys_weight = cosine_step_schedule(t, max_steps=args.noise_steps).unsqueeze(1).unsqueeze(2)
-                loss2 = weighted_mse_loss(x_t_spectr_norm, pred_spectr_norm, phys_weight * 10)
-                loss3 = weighted_mean(sigmoid_loss(pred_norm, el_pointing=el_pointing_adjusted, pixel_in_mm=pixel_in_mm_adjusted, device=device), phys_weight)
-                if not finetune:
-                    loss = loss1 + loss2 + loss3
-                else:
-                    loss = loss2 + loss3
-            else:
-                loss = loss1
-                loss2 = torch.Tensor([0])
-                loss3 = torch.Tensor([0])
+            loss = mse(noise, predicted_noise)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             ema.step_ema(ema_model, model)
             scheduler.step()
-            if args.phys and not finetune:
-                pbar.set_postfix({"_ALL": "{:.4f}".format(loss.item()), "DIFF": "{:.4f}".format(loss1.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
-            elif finetune:
-                pbar.set_postfix({"_ALL": "{:.4f}".format(loss.item()), "SPECTR": "{:.4f}".format(loss2.item()), "BEAMPOS": "{:.4f}".format(loss3.item())})
-            else:
-                pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item())})
+            pbar.set_postfix({"_MSE": "{:.4f}".format(loss.item())})
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
         if args.sample_freq and epoch % args.sample_freq == 0:# and epoch > 0:

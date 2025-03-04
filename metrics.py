@@ -203,8 +203,8 @@ def main(validate_on = []):
 
 
 def sample_loop():
-    device = 'cuda:2'
-    names = ['valid_gaindata_cosineched']
+    device = 'cuda:0'
+    names = ['valid_gaindata_cosinesched', 'valid_gaindata_nophys']
     section_counts_options = [[10], create_sections_list(10, 10, cosine_step_schedule), [15], create_sections_list(10, 15, cosine_step_schedule),
                               [20], create_sections_list(10, 20, cosine_step_schedule), [25], create_sections_list(10, 25, cosine_step_schedule),
                               [30], create_sections_list(10, 30, cosine_step_schedule)]
@@ -214,7 +214,7 @@ def sample_loop():
     for name in names:
         for cfg in range(1, 9):
             for section_counts, section_str in zip(section_counts_options, section_names):
-                result_dir = f'results_gaindata_batch4_600e/cossched_sec{section_str}_cfg{cfg}'
+                result_dir = f'results_gaindata_batch4_600e/{name}_sec{section_str}_cfg{cfg}'
                 if os.path.exists(result_dir):
                     print(f"Directory {result_dir} already exists. Skipping...")
                     continue 
@@ -259,7 +259,7 @@ def metrics_loop(dir1, dir2, csv_path, start=1, end=22):
 
 if __name__ == "__main__":
     # main(validate_on=['3', '8', '11', '19', '21'])
-    metrics_loop('data/with_gain', 'results_gaindata_batch4_600e', 'metrics.csv')
-    # sample_loop()
+    # metrics_loop('data/with_gain', 'results_gaindata_batch4_600e', 'metrics.csv')
+    sample_loop()
 
 # validate on: 3, 8, 11, 19, 21
