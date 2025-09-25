@@ -345,7 +345,7 @@ def main():
     Main function to execute the Wasserstein distance workflow.
     """
     # Directory paths
-    results_dir = "results_gaindata_batch4_600e_moresections"
+    results_dir = "results_gaindata_batch4_600e"
     validation_dir = "data/with_gain"
     params_file = "data/params.csv"
     
@@ -366,7 +366,7 @@ def main():
     min_avg_charge = 0
     
     # Set minimum energy threshold in MeV (can be None to include all energies)
-    min_energy_MeV = 0  # Example: only include energies above 30 MeV
+    min_energy_MeV = 30  # Example: only include energies above 30 MeV
     
     # Analyze spectra
     results = analyze_energy_spectra(
@@ -392,7 +392,7 @@ def main():
         print(f"\nBest performing model: {best_model[0]} with average Wasserstein distance = {best_model[1]['average_wasserstein_distance']:.4f}")
     
     # Save detailed results to CSV
-    output_csv = "wasserstein_results.csv"
+    output_csv = "wasserstein_results_30MeV.csv"
     csv_data = []
     
     for model_key, model_data in results.items():
@@ -425,7 +425,7 @@ def main():
         print(f"\nDetailed results saved to {output_csv}")
     
     # Also save a summary CSV with just model-level results
-    summary_csv = "wasserstein_summary.csv"
+    summary_csv = "wasserstein_summary_30MeV.csv"
     summary_data = []
     
     for model_key, model_data in results.items():

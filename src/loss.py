@@ -21,18 +21,17 @@ class EDMLoss:
         self.P_std = P_std
         self.sigma_data = sigma_data
 
-    def __call__(self, net, images, labels=None, augment_pipe=None):
-        rnd_normal = torch.randn([images.shape[0], 1, 1], device=images.device)
+    def __call__(self, net, y, settings=None):
+        rnd_normal = torch.randn([y.shape[0], 1, 1], device=y.device)
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
         weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
-        images =images.unsqueeze(1)
-        y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
+        # print(y.shape)
+        # y = y.unsqueeze(1)
         n = torch.randn_like(y) * sigma
-        D_yn = net(y + n, sigma, labels)
+        D_yn = net(y + n, sigma, settings)
 
-        mse = nn.MSELoss()
-        #loss = weight * ((D_yn - y) ** 2)
-        loss = mse(y, D_yn)
+        #mse = nn.MSELoss()
+        loss = weight * ((D_yn - y) ** 2)
         return loss
 
 #----------------------------------------------------------------------------

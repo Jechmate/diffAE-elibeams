@@ -92,15 +92,15 @@ class SpectrumDataset(Dataset):
         
         # Normalize intensity if requested
         if self.normalize:
-            intensity = intensity / self.max_intensity
+            intensity = (intensity / self.max_intensity) * 2 - 1
             
         # Apply any additional transforms
         if self.transform:
             intensity = self.transform(intensity)
-        # 448, cause original has 450 and 450/2 is 225 which is odd
+        # Use only the first 256 points from the spectrum
         return {
-            'intensity': intensity[:448],
-            'energy': energy[:448],
+            'intensity': intensity[:256],
+            'energy': energy[:256],
             'settings': settings
         }
 
